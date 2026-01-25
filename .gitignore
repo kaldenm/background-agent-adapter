@@ -9,6 +9,8 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.ruff_cache/
+.pytest_cache/
 
 # Build outputs
 dist/
