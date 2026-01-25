@@ -9,7 +9,7 @@ This package provides the data plane for Open-Inspect:
 - **Sandboxes**: Isolated development environments running OpenCode
 - **Images**: Pre-built container images with all development tools
 - **Snapshots**: Filesystem snapshots for fast startup and session persistence
-- **Scheduler**: Automatic image rebuilding every 30 minutes
+- **Scheduler**: Image rebuilding infrastructure (currently disabled)
 
 ## Architecture
 
@@ -53,7 +53,7 @@ Base image definition with:
 
 ### Scheduler (`src/scheduler/`)
 
-- **image_builder.py**: Scheduled image rebuilds (every 30 min)
+- **image_builder.py**: Image rebuild infrastructure (scheduling currently disabled)
 
 ## Usage
 
@@ -85,12 +85,18 @@ See `.env.example` for a full list of environment variables.
 ### Deploy
 
 ```bash
-# Deploy the app
-modal deploy src/
+# Deploy the app (recommended)
+modal deploy deploy.py
 
-# Or run locally for development
+# Alternative: deploy the src package directly
+modal deploy -m src
+
+# Run locally for development
 modal run src/
 ```
+
+> **Note**: Never deploy `src/app.py` directly - it only defines the app and shared resources.
+> Use `deploy.py` or `-m src` to ensure all function modules are registered.
 
 ### Register a Repository
 
@@ -158,7 +164,7 @@ Set via Modal secrets:
 
 | Criterion | Test Method |
 |-----------|-------------|
-| Base image builds | `modal run src/images/base.py` |
+| App deploys successfully | `modal deploy deploy.py` completes without errors |
 | Sandbox starts from snapshot | Time `create_sandbox()` after warm |
 | Git sync completes | Verify HEAD matches origin |
 | OpenCode server responds | `curl localhost:4096/global/health` |
