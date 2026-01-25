@@ -1,7 +1,7 @@
 # Open-Inspect
 
 An open-source background coding agent system inspired by
-[Ramp's Inspect](https://ramp.com/blog/building-inspect).
+[Ramp's Inspect](https://builders.ramp.com/post/why-we-built-our-background-agent).
 
 ## Overview
 
@@ -40,7 +40,8 @@ The system uses a shared GitHub App installation for all git operations (clone, 
 
 ### Why Single-Tenant Only
 
-This architecture follows [Ramp's Inspect design](https://ramp.com/blog/building-inspect), which was
+This architecture follows
+[Ramp's Inspect design](https://builders.ramp.com/post/why-we-built-our-background-agent), which was
 built for internal use where all employees are trusted and have access to company repositories.
 
 **For multi-tenant deployment**, you would need:
@@ -146,7 +147,8 @@ MIT
 
 ## Credits
 
-Inspired by [Ramp's Inspect](https://ramp.com/blog/building-inspect) and built with:
+Inspired by [Ramp's Inspect](https://builders.ramp.com/post/why-we-built-our-background-agent) and
+built with:
 
 - [Modal](https://modal.com) - Cloud sandbox infrastructure
 - [Cloudflare Workers](https://workers.cloudflare.com) - Edge computing
