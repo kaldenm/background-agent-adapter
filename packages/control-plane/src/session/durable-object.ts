@@ -907,6 +907,7 @@ export class SessionDO extends DurableObject<Env> {
 
     // Build client info from participant data
     const clientInfo: ClientInfo = {
+      participantId: participant.id,
       userId: participant.user_id,
       name: participant.github_name || participant.github_login || participant.user_id,
       avatar: participant.github_login
@@ -953,6 +954,7 @@ export class SessionDO extends DurableObject<Env> {
       type: "subscribed",
       sessionId: state.id,
       state,
+      participantId: participant.id,
     } as ServerMessage);
 
     // Send historical events (messages and sandbox events)
@@ -969,11 +971,18 @@ export class SessionDO extends DurableObject<Env> {
    * Send historical events to a newly connected client.
    */
   private sendHistoricalEvents(ws: WebSocket): void {
-    // Get messages (user prompts)
+    // Get messages with participant info (user prompts)
     const messagesResult = this.sql.exec(
-      `SELECT * FROM messages ORDER BY created_at ASC LIMIT 100`
+      `SELECT m.*, p.id as participant_id, p.github_name, p.github_login
+       FROM messages m
+       LEFT JOIN participants p ON m.author_id = p.id
+       ORDER BY m.created_at ASC LIMIT 100`
     );
-    const messages = messagesResult.toArray() as unknown as MessageRow[];
+    const messages = messagesResult.toArray() as unknown as (MessageRow & {
+      participant_id: string | null;
+      github_name: string | null;
+      github_login: string | null;
+    })[];
 
     // Get events (tool calls, tokens, etc.)
     const eventsResult = this.sql.exec(`SELECT * FROM events ORDER BY created_at ASC LIMIT 500`);
@@ -983,7 +992,13 @@ export class SessionDO extends DurableObject<Env> {
     interface HistoryItem {
       type: "message" | "event";
       timestamp: number;
-      data: MessageRow | EventRow;
+      data:
+        | (MessageRow & {
+            participant_id: string | null;
+            github_name: string | null;
+            github_login: string | null;
+          })
+        | EventRow;
     }
 
     const combined: HistoryItem[] = [
@@ -997,7 +1012,11 @@ export class SessionDO extends DurableObject<Env> {
     // Send in chronological order
     for (const item of combined) {
       if (item.type === "message") {
-        const msg = item.data as MessageRow;
+        const msg = item.data as MessageRow & {
+          participant_id: string | null;
+          github_name: string | null;
+          github_login: string | null;
+        };
         this.safeSend(ws, {
           type: "sandbox_event",
           event: {
@@ -1005,6 +1024,15 @@ export class SessionDO extends DurableObject<Env> {
             content: msg.content,
             messageId: msg.id,
             timestamp: msg.created_at / 1000, // Convert to seconds
+            author: msg.participant_id
+              ? {
+                  participantId: msg.participant_id,
+                  name: msg.github_name || msg.github_login || "Unknown",
+                  avatar: msg.github_login
+                    ? `https://github.com/${msg.github_login}.png`
+                    : undefined,
+                }
+              : undefined,
           },
         });
       } else {
@@ -1058,6 +1086,7 @@ export class SessionDO extends DurableObject<Env> {
           const mapping = mappings[0];
           console.log(`[DO] Recovered client info from DB: wsId=${wsId}, user=${mapping.user_id}`);
           client = {
+            participantId: mapping.participant_id,
             userId: mapping.user_id,
             name: mapping.github_name || mapping.github_login || mapping.user_id,
             avatar: mapping.github_login
@@ -1756,6 +1785,7 @@ export class SessionDO extends DurableObject<Env> {
    */
   private getPresenceList(): ParticipantPresence[] {
     return Array.from(this.clients.values()).map((c) => ({
+      participantId: c.participantId,
       userId: c.userId,
       name: c.name,
       avatar: c.avatar,

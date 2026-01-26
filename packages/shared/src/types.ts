@@ -121,6 +121,11 @@ export interface SandboxEvent {
   artifactType?: string;
   url?: string;
   metadata?: Record<string, unknown>;
+  author?: {
+    participantId: string;
+    name: string;
+    avatar?: string;
+  };
 }
 
 // WebSocket message types
@@ -134,7 +139,7 @@ export type ClientMessage =
 
 export type ServerMessage =
   | { type: "pong"; timestamp: number }
-  | { type: "subscribed"; sessionId: string; state: SessionState }
+  | { type: "subscribed"; sessionId: string; state: SessionState; participantId: string }
   | { type: "prompt_queued"; messageId: string; position: number }
   | { type: "sandbox_event"; event: SandboxEvent }
   | { type: "presence_sync"; participants: ParticipantPresence[] }
@@ -159,6 +164,7 @@ export interface SessionState {
 
 // Participant presence info
 export interface ParticipantPresence {
+  participantId: string;
   userId: string;
   name: string;
   avatar?: string;
