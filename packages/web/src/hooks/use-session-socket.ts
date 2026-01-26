@@ -119,6 +119,7 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
       status?: string;
       error?: string;
       participantId?: string;
+      participant?: { participantId: string; name: string; avatar?: string };
     }) => {
       switch (data.type) {
         case "subscribed":
@@ -131,9 +132,13 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
           if (data.state) {
             setSessionState(data.state);
           }
-          // Store the current user's participant ID for author attribution
+          // Store the current user's participant ID and info for author attribution
           if (data.participantId) {
             setCurrentParticipantId(data.participantId);
+          }
+          // Initialize participant ref immediately for sendPrompt author attribution
+          if (data.participant) {
+            currentParticipantRef.current = data.participant;
           }
           break;
 
