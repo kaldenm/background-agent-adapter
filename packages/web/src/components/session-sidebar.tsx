@@ -84,26 +84,26 @@ export function SessionSidebar({ onNewSession, onToggle }: SessionSidebarProps) 
   const currentSessionId = pathname?.startsWith("/session/") ? pathname.split("/")[2] : null;
 
   return (
-    <aside className="w-72 h-screen flex flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
+    <aside className="w-72 h-screen flex flex-col border-r border-border-muted bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border-muted">
         <div className="flex items-center gap-2">
           <button
             onClick={onToggle}
-            className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition"
             title="Toggle sidebar"
           >
             <SidebarIcon />
           </button>
           <Link href="/" className="flex items-center gap-2">
             <InspectIcon />
-            <span className="font-semibold">Inspect</span>
+            <span className="font-semibold text-foreground">Inspect</span>
           </Link>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={onNewSession}
-            className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition"
             title="New session"
           >
             <PlusIcon />
@@ -123,7 +123,7 @@ export function SessionSidebar({ onNewSession, onToggle }: SessionSidebarProps) 
           ) : (
             <button
               onClick={() => signOut()}
-              className="w-7 h-7 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-medium"
+              className="w-7 h-7 rounded-full bg-card flex items-center justify-center text-xs font-medium text-foreground"
               title="Sign out"
             >
               {authSession?.user?.name?.charAt(0).toUpperCase() || "?"}
@@ -139,7 +139,7 @@ export function SessionSidebar({ onNewSession, onToggle }: SessionSidebarProps) 
           placeholder="Search sessions..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
+          className="w-full px-3 py-2 text-sm bg-input border border-border focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent placeholder:text-secondary-foreground text-foreground"
         />
       </div>
 
@@ -147,10 +147,10 @@ export function SessionSidebar({ onNewSession, onToggle }: SessionSidebarProps) 
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex justify-center py-8">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-400" />
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-muted-foreground" />
           </div>
         ) : sessions.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-gray-500">No sessions yet</div>
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">No sessions yet</div>
         ) : (
           <>
             {/* Active Sessions */}
@@ -166,7 +166,7 @@ export function SessionSidebar({ onNewSession, onToggle }: SessionSidebarProps) 
             {inactiveSessions.length > 0 && (
               <>
                 <div className="px-4 py-2 mt-2">
-                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                  <span className="text-xs font-medium text-secondary-foreground uppercase tracking-wide">
                     Inactive
                   </span>
                 </div>
@@ -196,15 +196,11 @@ function SessionListItem({ session, isActive }: { session: SessionItem; isActive
     <Link
       href={`/session/${session.id}`}
       className={`block px-4 py-2.5 border-l-2 transition ${
-        isActive
-          ? "border-l-blue-500 bg-blue-50 dark:bg-blue-900/20"
-          : "border-l-transparent hover:bg-gray-50 dark:hover:bg-gray-900"
+        isActive ? "border-l-accent bg-accent-muted" : "border-l-transparent hover:bg-muted"
       }`}
     >
-      <div className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-        {displayTitle}
-      </div>
-      <div className="flex items-center gap-1 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+      <div className="truncate text-sm font-medium text-foreground">{displayTitle}</div>
+      <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
         <span>{relativeTime}</span>
         <span>·</span>
         <span className="truncate">{repoInfo}</span>

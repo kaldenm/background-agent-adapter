@@ -101,7 +101,7 @@ export default function NewSessionPage() {
   if (status === "loading" || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 dark:border-gray-100" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground" />
       </div>
     );
   }
@@ -156,77 +156,75 @@ function NewSessionContent({
     <div className="h-full flex flex-col">
       {/* Header with toggle when sidebar is closed */}
       {!isOpen && (
-        <header className="border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
+        <header className="border-b border-border-muted flex-shrink-0">
           <div className="px-4 py-3 flex items-center gap-3">
             <button
               onClick={toggle}
-              className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition"
               title="Open sidebar"
             >
               <SidebarToggleIcon />
             </button>
-            <h1 className="text-lg font-semibold">New Session</h1>
+            <h1 className="text-lg font-semibold text-foreground">New Session</h1>
           </div>
         </header>
       )}
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-4 py-8">
-          {isOpen && <h1 className="text-2xl font-bold mb-8">New Session</h1>}
+          {isOpen && <h1 className="text-2xl font-bold text-foreground mb-8">New Session</h1>}
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-4 py-3 rounded-lg">
+              <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-4 py-3 border border-red-200 dark:border-red-800">
                 {error}
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium mb-2">Repository</label>
+              <label className="block text-sm font-medium text-foreground mb-2">Repository</label>
               <select
                 value={selectedRepo}
                 onChange={(e) => setSelectedRepo(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 border border-border bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 required
               >
                 <option value="">Select a repository...</option>
                 {repos.map((repo) => (
-                  <option
-                    key={repo.id}
-                    value={repo.fullName}
-                    className="text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
-                  >
+                  <option key={repo.id} value={repo.fullName} className="text-foreground bg-input">
                     {repo.fullName} {repo.private ? "(private)" : ""}
                   </option>
                 ))}
               </select>
               {repos.length === 0 && (
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                <p className="mt-2 text-sm text-muted-foreground">
                   No repositories found. Make sure you have granted access to your repositories.
                 </p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Title (optional)</label>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Title (optional)
+              </label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g., Add user authentication"
-                className="w-full px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 border border-border bg-transparent text-foreground focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-secondary-foreground"
               />
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              <p className="mt-2 text-sm text-muted-foreground">
                 A title helps identify the session. If not provided, the repository name will be
                 used.
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Model</label>
+              <label className="block text-sm font-medium text-foreground mb-2">Model</label>
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 border border-border bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 {models.map((model) => (
                   <option key={model.id} value={model.id}>
@@ -234,7 +232,7 @@ function NewSessionContent({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              <p className="mt-2 text-sm text-muted-foreground">
                 Haiku is faster and more affordable. Sonnet provides better reasoning for complex
                 tasks.
               </p>
@@ -243,7 +241,7 @@ function NewSessionContent({
             <button
               type="submit"
               disabled={creating || !selectedRepo}
-              className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              className="w-full py-3 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
               {creating ? "Creating..." : "Create Session"}
             </button>

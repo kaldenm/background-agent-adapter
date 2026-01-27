@@ -36,7 +36,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   if (status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 dark:border-gray-100" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground" />
       </div>
     );
   }
@@ -45,13 +45,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   if (!session) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-8">
-        <h1 className="text-4xl font-bold">Open-Inspect</h1>
-        <p className="text-gray-600 dark:text-gray-400 max-w-md text-center">
+        <h1 className="text-4xl font-bold text-foreground">Open-Inspect</h1>
+        <p className="text-muted-foreground max-w-md text-center">
           Background coding agent for your team. Ship faster with AI-powered code changes.
         </p>
         <button
           onClick={() => signIn("github")}
-          className="flex items-center gap-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
+          className="flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 font-medium hover:opacity-90 transition"
         >
           <GitHubIcon />
           Sign in with GitHub

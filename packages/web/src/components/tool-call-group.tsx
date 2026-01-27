@@ -13,7 +13,7 @@ interface ToolCallGroupProps {
 function ChevronIcon({ rotated }: { rotated: boolean }) {
   return (
     <svg
-      className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${
+      className={`w-3.5 h-3.5 text-secondary-foreground transition-transform duration-200 ${
         rotated ? "rotate-90" : ""
       }`}
       fill="none"
@@ -26,7 +26,7 @@ function ChevronIcon({ rotated }: { rotated: boolean }) {
 }
 
 function ToolIcon({ toolName }: { toolName: string }) {
-  const iconClass = "w-3.5 h-3.5 text-gray-400";
+  const iconClass = "w-3.5 h-3.5 text-secondary-foreground";
 
   switch (toolName) {
     case "Read":
@@ -116,19 +116,17 @@ export function ToolCallGroup({ events, groupId }: ToolCallGroupProps) {
     <div className="py-1">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded px-2 py-1 -mx-2 transition-colors"
+        className="w-full flex items-center gap-2 text-sm text-left hover:bg-muted px-2 py-1 -mx-2 transition-colors"
       >
         <ChevronIcon rotated={isExpanded} />
         <ToolIcon toolName={formatted.toolName} />
-        <span className="font-medium text-gray-700 dark:text-gray-300">{formatted.toolName}</span>
-        <span className="text-gray-500 dark:text-gray-400">{formatted.summary}</span>
-        <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">
-          {time}
-        </span>
+        <span className="font-medium text-foreground">{formatted.toolName}</span>
+        <span className="text-muted-foreground">{formatted.summary}</span>
+        <span className="text-xs text-secondary-foreground ml-auto flex-shrink-0">{time}</span>
       </button>
 
       {isExpanded && (
-        <div className="ml-4 mt-1 pl-2 border-l-2 border-gray-200 dark:border-gray-700">
+        <div className="ml-4 mt-1 pl-2 border-l-2 border-border">
           {events.map((event, index) => (
             <ToolCallItem
               key={`${groupId}-${index}`}

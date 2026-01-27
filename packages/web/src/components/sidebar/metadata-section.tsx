@@ -42,28 +42,28 @@ export function MetadataSection({
   const getPrBadgeStyles = (state?: string) => {
     switch (state) {
       case "merged":
-        return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+        return "bg-success-muted text-success";
       case "closed":
         return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
       case "draft":
-        return "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400";
+        return "bg-muted text-muted-foreground";
       case "open":
       default:
-        return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+        return "bg-accent-muted text-accent";
     }
   };
 
   return (
     <div className="space-y-3">
       {/* Timestamp */}
-      <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <ClockIcon className="w-4 h-4" />
         <span>{formatRelativeTime(createdAt)}</span>
       </div>
 
       {/* Model */}
       {model && (
-        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <SparkleIcon className="w-4 h-4" />
           <span>{formatModelName(model)}</span>
         </div>
@@ -72,22 +72,22 @@ export function MetadataSection({
       {/* PR Badge */}
       {prNumber && (
         <div className="flex items-center gap-2 text-sm">
-          <GitHubIcon className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+          <GitHubIcon className="w-4 h-4 text-muted-foreground" />
           {prUrl ? (
             <a
               href={prUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-700 dark:text-gray-300 hover:underline"
+              className="text-accent hover:underline"
             >
               #{prNumber}
             </a>
           ) : (
-            <span className="text-gray-700 dark:text-gray-300">#{prNumber}</span>
+            <span className="text-foreground">#{prNumber}</span>
           )}
           {prState && (
             <span
-              className={`px-1.5 py-0.5 text-xs font-medium rounded capitalize ${getPrBadgeStyles(prState)}`}
+              className={`px-1.5 py-0.5 text-xs font-medium capitalize ${getPrBadgeStyles(prState)}`}
             >
               {prState}
             </span>
@@ -98,22 +98,19 @@ export function MetadataSection({
       {/* Branch */}
       {branchName && (
         <div className="flex items-center gap-2 text-sm">
-          <BranchIcon className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-          <span
-            className="text-gray-700 dark:text-gray-300 truncate max-w-[180px]"
-            title={branchName}
-          >
+          <BranchIcon className="w-4 h-4 text-muted-foreground" />
+          <span className="text-foreground truncate max-w-[180px]" title={branchName}>
             {truncateBranch(branchName)}
           </span>
           <button
             onClick={handleCopyBranch}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+            className="p-1 hover:bg-muted transition-colors"
             title={copied ? "Copied!" : "Copy branch name"}
           >
             {copied ? (
-              <CheckIcon className="w-3.5 h-3.5 text-green-500" />
+              <CheckIcon className="w-3.5 h-3.5 text-success" />
             ) : (
-              <CopyIcon className="w-3.5 h-3.5 text-gray-400" />
+              <CopyIcon className="w-3.5 h-3.5 text-secondary-foreground" />
             )}
           </button>
         </div>
@@ -122,12 +119,12 @@ export function MetadataSection({
       {/* Repository tag */}
       {repoOwner && repoName && (
         <div className="flex items-center gap-2 text-sm">
-          <GitHubIcon className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+          <GitHubIcon className="w-4 h-4 text-muted-foreground" />
           <a
             href={`https://github.com/${repoOwner}/${repoName}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-gray-700 dark:text-gray-300 hover:underline"
+            className="text-accent hover:underline"
           >
             {repoOwner}/{repoName}
           </a>
