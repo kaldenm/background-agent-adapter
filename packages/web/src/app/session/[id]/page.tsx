@@ -89,7 +89,12 @@ const MODEL_OPTIONS: { category: string; models: ModelOption[] }[] = [
 
 function CheckIcon() {
   return (
-    <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg
+      className="w-4 h-4 text-[#8B7355] dark:text-[#a68b6a]"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
     </svg>
   );
@@ -108,13 +113,13 @@ function ModelOptionButton({
     <button
       type="button"
       onClick={onSelect}
-      className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50 transition ${
-        isSelected ? "text-gray-900 dark:text-gray-100" : "text-gray-600 dark:text-gray-400"
+      className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5 transition ${
+        isSelected ? "text-[#1a1a1a] dark:text-[#F8F8F6]" : "text-[#666666] dark:text-[#999999]"
       }`}
     >
       <div className="flex flex-col items-start">
         <span className="font-medium">{model.name}</span>
-        <span className="text-xs text-gray-400">{model.description}</span>
+        <span className="text-xs text-[#999999]">{model.description}</span>
       </div>
       {isSelected && <CheckIcon />}
     </button>
@@ -240,7 +245,7 @@ export default function SessionPage() {
   if (authStatus === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 dark:border-gray-100" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1a1a1a] dark:border-[#F8F8F6]" />
       </div>
     );
   }
@@ -367,23 +372,23 @@ function SessionContent({
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <header className="border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
+      <header className="border-b border-black/5 dark:border-white/5 flex-shrink-0">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {!isOpen && (
               <button
                 onClick={toggle}
-                className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+                className="p-1.5 text-[#666666] hover:text-[#1a1a1a] dark:text-[#999999] dark:hover:text-[#F8F8F6] hover:bg-black/5 dark:hover:bg-white/5 transition"
                 title="Open sidebar"
               >
                 <SidebarToggleIcon />
               </button>
             )}
             <div>
-              <h1 className="font-medium">
+              <h1 className="font-medium text-[#1a1a1a] dark:text-[#F8F8F6]">
                 {sessionState?.title || `${sessionState?.repoOwner}/${sessionState?.repoName}`}
               </h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-sm text-[#666666] dark:text-[#999999]">
                 {sessionState?.repoOwner}/{sessionState?.repoName}
               </p>
             </div>
@@ -402,7 +407,7 @@ function SessionContent({
           <p className="text-sm text-red-700 dark:text-red-400">{authError || connectionError}</p>
           <button
             onClick={reconnect}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition"
+            className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition"
           >
             Reconnect
           </button>
@@ -441,7 +446,7 @@ function SessionContent({
       </main>
 
       {/* Input */}
-      <footer className="border-t border-gray-200 dark:border-gray-800 flex-shrink-0">
+      <footer className="border-t border-black/5 dark:border-white/5 flex-shrink-0">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto p-4 pb-6">
           {/* Action bar above input */}
           <div className="mb-3">
@@ -455,7 +460,7 @@ function SessionContent({
           </div>
 
           {/* Input container */}
-          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+          <div className="border border-black/10 dark:border-white/10 bg-white dark:bg-[#1a1a1a]">
             {/* Text input area with floating send button */}
             <div className="relative">
               <textarea
@@ -464,7 +469,7 @@ function SessionContent({
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder={isSubmitting ? "Type your next message..." : "Ask or build anything"}
-                className="w-full resize-none bg-transparent px-4 pt-4 pb-12 focus:outline-none text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                className="w-full resize-none bg-transparent px-4 pt-4 pb-12 focus:outline-none text-[#1a1a1a] dark:text-[#F8F8F6] placeholder-[#999999]"
                 rows={3}
               />
               {/* Floating action buttons */}
@@ -476,7 +481,7 @@ function SessionContent({
                   <button
                     type="button"
                     onClick={stopExecution}
-                    className="p-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
+                    className="p-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
                     title="Stop"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -487,7 +492,7 @@ function SessionContent({
                 <button
                   type="submit"
                   disabled={!prompt.trim() || isSubmitting}
-                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  className="p-2 text-[#999999] hover:text-[#666666] dark:hover:text-[#F8F8F6] disabled:opacity-30 disabled:cursor-not-allowed transition"
                   title={isSubmitting && prompt.trim() ? "Wait for execution to complete" : "Send"}
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -503,14 +508,14 @@ function SessionContent({
             </div>
 
             {/* Footer row with model selector and agent label */}
-            <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 dark:border-gray-800">
+            <div className="flex items-center justify-between px-4 py-2 border-t border-black/5 dark:border-white/5">
               {/* Left side - Model selector */}
               <div className="relative" ref={modelDropdownRef}>
                 <button
                   type="button"
                   onClick={() => !isSubmitting && setModelDropdownOpen(!modelDropdownOpen)}
                   disabled={isSubmitting}
-                  className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  className="flex items-center gap-1 text-sm text-[#666666] dark:text-[#999999] hover:text-[#1a1a1a] dark:hover:text-[#F8F8F6] disabled:opacity-50 disabled:cursor-not-allowed transition"
                 >
                   <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
@@ -520,12 +525,12 @@ function SessionContent({
 
                 {/* Dropdown menu */}
                 {modelDropdownOpen && (
-                  <div className="absolute bottom-full left-0 mb-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+                  <div className="absolute bottom-full left-0 mb-2 w-56 bg-[#F8F8F6] dark:bg-[#1a1a1a] shadow-lg border border-black/10 dark:border-white/10 py-1 z-50">
                     {MODEL_OPTIONS.map((group, groupIdx) => (
                       <div key={group.category}>
                         <div
-                          className={`px-3 py-1.5 text-xs font-medium text-gray-400 uppercase tracking-wider ${
-                            groupIdx > 0 ? "border-t border-gray-100 dark:border-gray-700 mt-1" : ""
+                          className={`px-3 py-1.5 text-xs font-medium text-[#999999] uppercase tracking-wider ${
+                            groupIdx > 0 ? "border-t border-black/5 dark:border-white/5 mt-1" : ""
                           }`}
                         >
                           {group.category}
@@ -548,7 +553,7 @@ function SessionContent({
               </div>
 
               {/* Right side - Agent label */}
-              <span className="text-sm text-gray-500 dark:text-gray-400">build agent</span>
+              <span className="text-sm text-[#666666] dark:text-[#999999]">build agent</span>
             </div>
           </div>
         </form>
@@ -586,8 +591,8 @@ function ConnectionStatus({ connected, connecting }: { connected: boolean; conne
 
   if (connected) {
     return (
-      <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-500">
-        <span className="w-2 h-2 rounded-full bg-green-500" />
+      <span className="flex items-center gap-1 text-xs text-[#28c840]">
+        <span className="w-2 h-2 rounded-full bg-[#28c840]" />
         Connected
       </span>
     );
@@ -605,12 +610,12 @@ function SandboxStatus({ status }: { status?: string }) {
   if (!status) return null;
 
   const colors: Record<string, string> = {
-    pending: "text-gray-600 dark:text-gray-400",
+    pending: "text-[#666666] dark:text-[#999999]",
     warming: "text-yellow-600 dark:text-yellow-500",
-    syncing: "text-blue-600 dark:text-blue-500",
-    ready: "text-green-600 dark:text-green-500",
-    running: "text-blue-600 dark:text-blue-500",
-    stopped: "text-gray-600 dark:text-gray-400",
+    syncing: "text-[#8B7355] dark:text-[#a68b6a]",
+    ready: "text-[#28c840]",
+    running: "text-[#8B7355] dark:text-[#a68b6a]",
+    stopped: "text-[#666666] dark:text-[#999999]",
     failed: "text-red-600 dark:text-red-500",
   };
 
@@ -619,9 +624,9 @@ function SandboxStatus({ status }: { status?: string }) {
 
 function ThinkingIndicator() {
   return (
-    <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 flex items-center gap-2">
-      <span className="inline-block w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-      <span className="text-sm text-gray-500">Thinking...</span>
+    <div className="bg-[#F8F8F6] dark:bg-white/5 p-4 flex items-center gap-2">
+      <span className="inline-block w-2 h-2 bg-[#8B7355] dark:bg-[#a68b6a] rounded-full animate-pulse" />
+      <span className="text-sm text-[#666666] dark:text-[#999999]">Thinking...</span>
     </div>
   );
 }
@@ -641,14 +646,14 @@ function ParticipantsList({
       {uniqueParticipants.slice(0, 3).map((p) => (
         <div
           key={p.userId}
-          className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-700 flex items-center justify-center text-xs font-medium border-2 border-white dark:border-gray-900"
+          className="w-8 h-8 rounded-full bg-[#F8F8F6] dark:bg-white/10 flex items-center justify-center text-xs font-medium text-[#1a1a1a] dark:text-[#F8F8F6] border-2 border-white"
           title={p.name}
         >
           {p.name.charAt(0).toUpperCase()}
         </div>
       ))}
       {uniqueParticipants.length > 3 && (
-        <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-800 flex items-center justify-center text-xs font-medium border-2 border-white dark:border-gray-900">
+        <div className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center text-xs font-medium text-[#1a1a1a] dark:text-[#F8F8F6] border-2 border-white">
           +{uniqueParticipants.length - 3}
         </div>
       )}
@@ -693,17 +698,19 @@ function EventItem({
       const authorName = isCurrentUser ? "You" : event.author?.name || "Unknown User";
 
       return (
-        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 ml-8">
+        <div className="bg-[#8B7355]/10 dark:bg-[#8B7355]/20 p-4 ml-8">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               {!isCurrentUser && event.author?.avatar && (
                 <img src={event.author.avatar} alt={authorName} className="w-5 h-5 rounded-full" />
               )}
-              <span className="text-xs text-blue-600 dark:text-blue-400">{authorName}</span>
+              <span className="text-xs text-[#8B7355] dark:text-[#a68b6a]">{authorName}</span>
             </div>
-            <span className="text-xs text-gray-500">{time}</span>
+            <span className="text-xs text-[#999999]">{time}</span>
           </div>
-          <pre className="whitespace-pre-wrap text-sm">{event.content}</pre>
+          <pre className="whitespace-pre-wrap text-sm text-[#1a1a1a] dark:text-[#F8F8F6]">
+            {event.content}
+          </pre>
         </div>
       );
     }
@@ -712,10 +719,10 @@ function EventItem({
       // Display the model's text response with safe markdown rendering
       if (!event.content) return null;
       return (
-        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+        <div className="bg-[#F8F8F6] dark:bg-white/5 p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-gray-500">Assistant</span>
-            <span className="text-xs text-gray-500">{time}</span>
+            <span className="text-xs text-[#666666] dark:text-[#999999]">Assistant</span>
+            <span className="text-xs text-[#999999]">{time}</span>
           </div>
           <SafeMarkdown content={event.content} className="text-sm" />
         </div>
@@ -740,14 +747,14 @@ function EventItem({
             />
           </svg>
           <span className="truncate">{event.error}</span>
-          <span className="text-xs text-gray-400 ml-auto">{time}</span>
+          <span className="text-xs text-[#999999] ml-auto">{time}</span>
         </div>
       );
 
     case "git_sync":
       return (
-        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-          <span className="w-2 h-2 rounded-full bg-blue-500" />
+        <div className="flex items-center gap-2 text-sm text-[#666666] dark:text-[#999999]">
+          <span className="w-2 h-2 rounded-full bg-[#8B7355] dark:bg-[#a68b6a]" />
           Git sync: {event.status}
           <span className="text-xs">{time}</span>
         </div>
@@ -755,10 +762,10 @@ function EventItem({
 
     case "execution_complete":
       return (
-        <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-500">
-          <span className="w-2 h-2 rounded-full bg-green-500" />
+        <div className="flex items-center gap-2 text-sm text-[#28c840]">
+          <span className="w-2 h-2 rounded-full bg-[#28c840]" />
           Execution complete
-          <span className="text-xs text-gray-500">{time}</span>
+          <span className="text-xs text-[#999999]">{time}</span>
         </div>
       );
 

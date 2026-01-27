@@ -47,7 +47,7 @@ export function ActionBar({
 
   // Shared button style for bordered pill buttons
   const pillButtonClass =
-    "flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors";
+    "flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#1a1a1a] dark:text-[#F8F8F6] hover:text-[#1a1a1a] dark:hover:text-[#F8F8F6] border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors";
 
   return (
     <div className="flex items-center gap-2">
@@ -94,7 +94,7 @@ export function ActionBar({
       <div className="relative">
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className="flex items-center justify-center w-8 h-8 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+          className="flex items-center justify-center w-8 h-8 text-[#666666] dark:text-[#999999] hover:text-[#1a1a1a] dark:hover:text-[#F8F8F6] border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
         >
           <MoreIcon className="w-4 h-4" />
         </button>
@@ -102,10 +102,10 @@ export function ActionBar({
         {isMenuOpen && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setIsMenuOpen(false)} />
-            <div className="absolute bottom-full right-0 mb-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-20">
+            <div className="absolute bottom-full right-0 mb-2 w-48 bg-[#F8F8F6] dark:bg-[#1a1a1a] shadow-lg border border-black/10 dark:border-white/10 py-1 z-20">
               <button
                 onClick={handleCopyLink}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[#1a1a1a] dark:text-[#F8F8F6] hover:bg-black/5 dark:hover:bg-white/5"
               >
                 <LinkIcon className="w-4 h-4" />
                 Copy link
@@ -115,7 +115,7 @@ export function ActionBar({
                   href={prArtifact.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[#1a1a1a] dark:text-[#F8F8F6] hover:bg-black/5 dark:hover:bg-white/5"
                   onClick={() => setIsMenuOpen(false)}
                 >
                   <GitHubIcon className="w-4 h-4" />

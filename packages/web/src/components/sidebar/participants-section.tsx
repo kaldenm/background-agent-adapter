@@ -27,22 +27,22 @@ export function ParticipantsSection({ participants }: ParticipantsSectionProps) 
               <img
                 src={participant.avatar}
                 alt={participant.name}
-                className="w-6 h-6 rounded-full border-2 border-white dark:border-gray-900 object-cover"
+                className="w-6 h-6 rounded-full border-2 border-white object-cover"
               />
             ) : (
-              <div className="w-6 h-6 rounded-full border-2 border-white dark:border-gray-900 bg-gray-300 dark:bg-gray-600 flex items-center justify-center text-xs font-medium text-gray-700 dark:text-gray-200">
+              <div className="w-6 h-6 rounded-full border-2 border-white bg-[#F8F8F6] dark:bg-white/10 flex items-center justify-center text-xs font-medium text-[#1a1a1a] dark:text-[#F8F8F6]">
                 {participant.name.charAt(0).toUpperCase()}
               </div>
             )}
             {/* Status indicator */}
             {participant.status === "active" && (
-              <span className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border border-white dark:border-gray-900" />
+              <span className="absolute bottom-0 right-0 w-2 h-2 bg-[#28c840] rounded-full border border-white" />
             )}
           </div>
         ))}
       </div>
       {/* Count label */}
-      <span className="text-sm text-gray-600 dark:text-gray-400">
+      <span className="text-sm text-[#666666] dark:text-[#999999]">
         {count} {label}
       </span>
     </div>

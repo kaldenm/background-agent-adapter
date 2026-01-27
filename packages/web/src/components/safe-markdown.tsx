@@ -73,7 +73,7 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
               href={href}
               target="_blank"
               rel="noopener noreferrer nofollow"
-              className="text-blue-600 dark:text-blue-400 hover:underline"
+              className="text-[#8B7355] dark:text-[#a68b6a] hover:underline"
               {...props}
             >
               {children}
@@ -81,10 +81,7 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
           ),
           // Code blocks with styling
           pre: ({ children, ...props }: ComponentPropsWithoutRef<"pre">) => (
-            <pre
-              className="bg-gray-100 dark:bg-gray-800 rounded-md p-3 overflow-x-auto text-sm"
-              {...props}
-            >
+            <pre className="bg-[#F8F8F6] dark:bg-white/5 p-3 overflow-x-auto text-sm" {...props}>
               {children}
             </pre>
           ),
@@ -100,10 +97,7 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
               );
             }
             return (
-              <code
-                className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm"
-                {...props}
-              >
+              <code className="bg-[#F8F8F6] dark:bg-white/5 px-1.5 py-0.5 text-sm" {...props}>
                 {children}
               </code>
             );
@@ -128,7 +122,7 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
           // Blockquotes
           blockquote: ({ children, ...props }: ComponentPropsWithoutRef<"blockquote">) => (
             <blockquote
-              className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic text-gray-600 dark:text-gray-400"
+              className="border-l-4 border-black/10 dark:border-white/10 pl-4 italic text-[#666666] dark:text-[#999999]"
               {...props}
             >
               {children}
@@ -144,14 +138,14 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
           ),
           th: ({ children, ...props }: ComponentPropsWithoutRef<"th">) => (
             <th
-              className="border border-gray-300 dark:border-gray-600 px-3 py-1 bg-gray-50 dark:bg-gray-800 font-medium"
+              className="border border-black/10 dark:border-white/10 px-3 py-1 bg-[#F8F8F6] dark:bg-white/5 font-medium"
               {...props}
             >
               {children}
             </th>
           ),
           td: ({ children, ...props }: ComponentPropsWithoutRef<"td">) => (
-            <td className="border border-gray-300 dark:border-gray-600 px-3 py-1" {...props}>
+            <td className="border border-black/10 dark:border-white/10 px-3 py-1" {...props}>
               {children}
             </td>
           ),

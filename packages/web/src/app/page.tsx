@@ -20,11 +20,11 @@ function HomeContent({ onNewSession }: { onNewSession: () => void }) {
     <div className="h-full flex flex-col">
       {/* Header with toggle when sidebar is closed */}
       {!isOpen && (
-        <header className="border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
+        <header className="border-b border-black/5 dark:border-white/5 flex-shrink-0">
           <div className="px-4 py-3">
             <button
               onClick={toggle}
-              className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+              className="p-1.5 text-[#666666] hover:text-[#1a1a1a] dark:text-[#999999] dark:hover:text-[#F8F8F6] hover:bg-black/5 dark:hover:bg-white/5 transition"
               title="Open sidebar"
             >
               <SidebarToggleIcon />
@@ -35,15 +35,15 @@ function HomeContent({ onNewSession }: { onNewSession: () => void }) {
 
       <div className="flex-1 flex flex-col items-center justify-center p-8">
         <div className="max-w-xl text-center">
-          <h1 className="text-3xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+          <h1 className="text-3xl font-semibold text-[#1a1a1a] dark:text-[#F8F8F6] mb-4">
             Welcome to Open-Inspect
           </h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-8">
+          <p className="text-[#666666] dark:text-[#999999] mb-8">
             Select a session from the sidebar or create a new one to get started.
           </p>
           <button
             onClick={onNewSession}
-            className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition"
+            className="inline-flex items-center gap-2 bg-[#1a1a1a] dark:bg-[#F8F8F6] text-white dark:text-[#1a1a1a] px-6 py-3 font-medium hover:opacity-90 transition"
           >
             <PlusIcon />
             New Session
