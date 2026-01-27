@@ -73,7 +73,7 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
               href={href}
               target="_blank"
               rel="noopener noreferrer nofollow"
-              className="text-[#8B7355] dark:text-[#a68b6a] hover:underline"
+              className="text-accent hover:underline"
               {...props}
             >
               {children}
@@ -81,7 +81,7 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
           ),
           // Code blocks with styling
           pre: ({ children, ...props }: ComponentPropsWithoutRef<"pre">) => (
-            <pre className="bg-[#F8F8F6] dark:bg-white/5 p-3 overflow-x-auto text-sm" {...props}>
+            <pre className="bg-card p-3 overflow-x-auto text-sm" {...props}>
               {children}
             </pre>
           ),
@@ -97,7 +97,7 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
               );
             }
             return (
-              <code className="bg-[#F8F8F6] dark:bg-white/5 px-1.5 py-0.5 text-sm" {...props}>
+              <code className="bg-card px-1.5 py-0.5 text-sm" {...props}>
                 {children}
               </code>
             );
@@ -122,7 +122,7 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
           // Blockquotes
           blockquote: ({ children, ...props }: ComponentPropsWithoutRef<"blockquote">) => (
             <blockquote
-              className="border-l-4 border-black/10 dark:border-white/10 pl-4 italic text-[#666666] dark:text-[#999999]"
+              className="border-l-4 border-border pl-4 italic text-muted-foreground"
               {...props}
             >
               {children}
@@ -137,15 +137,12 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
             </div>
           ),
           th: ({ children, ...props }: ComponentPropsWithoutRef<"th">) => (
-            <th
-              className="border border-black/10 dark:border-white/10 px-3 py-1 bg-[#F8F8F6] dark:bg-white/5 font-medium"
-              {...props}
-            >
+            <th className="border border-border px-3 py-1 bg-card font-medium" {...props}>
               {children}
             </th>
           ),
           td: ({ children, ...props }: ComponentPropsWithoutRef<"td">) => (
-            <td className="border border-black/10 dark:border-white/10 px-3 py-1" {...props}>
+            <td className="border border-border px-3 py-1" {...props}>
               {children}
             </td>
           ),

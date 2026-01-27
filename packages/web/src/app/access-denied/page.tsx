@@ -15,11 +15,11 @@ function AccessDeniedContent() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-6">
-      <h1 className="text-4xl font-bold text-[#1a1a1a] dark:text-[#F8F8F6]">Access Denied</h1>
+      <h1 className="text-4xl font-bold text-foreground">Access Denied</h1>
       <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-6 py-4 text-red-700 dark:text-red-400 max-w-md text-center">
         {message}
       </div>
-      <a href="/" className="text-[#8B7355] dark:text-[#a68b6a] hover:underline">
+      <a href="/" className="text-accent hover:underline">
         Return to homepage
       </a>
     </div>
@@ -31,7 +31,7 @@ export default function AccessDeniedPage() {
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1a1a1a] dark:border-[#F8F8F6]" />
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground" />
         </div>
       }
     >

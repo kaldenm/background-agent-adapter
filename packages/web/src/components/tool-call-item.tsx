@@ -13,7 +13,7 @@ interface ToolCallItemProps {
 function ChevronIcon({ rotated }: { rotated: boolean }) {
   return (
     <svg
-      className={`w-3.5 h-3.5 text-[#999999] transition-transform duration-200 ${
+      className={`w-3.5 h-3.5 text-secondary-foreground transition-transform duration-200 ${
         rotated ? "rotate-90" : ""
       }`}
       fill="none"
@@ -28,7 +28,7 @@ function ChevronIcon({ rotated }: { rotated: boolean }) {
 function ToolIcon({ name }: { name: string | null }) {
   if (!name) return null;
 
-  const iconClass = "w-3.5 h-3.5 text-[#999999]";
+  const iconClass = "w-3.5 h-3.5 text-secondary-foreground";
 
   switch (name) {
     case "file":
@@ -132,7 +132,7 @@ export function ToolCallItem({ event, isExpanded, onToggle, showTime = true }: T
     <div className="py-0.5">
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-1.5 text-sm text-left text-[#666666] dark:text-[#999999] hover:text-[#1a1a1a] dark:hover:text-[#F8F8F6] transition-colors"
+        className="w-full flex items-center gap-1.5 text-sm text-left text-muted-foreground hover:text-foreground transition-colors"
       >
         <ChevronIcon rotated={isExpanded} />
         <ToolIcon name={formatted.icon} />
@@ -140,31 +140,31 @@ export function ToolCallItem({ event, isExpanded, onToggle, showTime = true }: T
           {formatted.toolName} {formatted.summary}
         </span>
         {showTime && (
-          <span className="text-xs text-[#999999] dark:text-[#666666] flex-shrink-0 ml-auto">
-            {time}
-          </span>
+          <span className="text-xs text-secondary-foreground flex-shrink-0 ml-auto">{time}</span>
         )}
       </button>
 
       {isExpanded && (
-        <div className="mt-2 ml-5 p-3 bg-[#F8F8F6] dark:bg-white/5 border border-black/5 dark:border-white/5 text-xs overflow-hidden">
+        <div className="mt-2 ml-5 p-3 bg-card border border-border-muted text-xs overflow-hidden">
           {args && Object.keys(args).length > 0 && (
             <div className="mb-2">
-              <div className="text-[#666666] dark:text-[#999999] mb-1 font-medium">Arguments:</div>
-              <pre className="overflow-x-auto text-[#1a1a1a] dark:text-[#F8F8F6] whitespace-pre-wrap">
+              <div className="text-muted-foreground mb-1 font-medium">Arguments:</div>
+              <pre className="overflow-x-auto text-foreground whitespace-pre-wrap">
                 {JSON.stringify(args, null, 2)}
               </pre>
             </div>
           )}
           {output && (
             <div>
-              <div className="text-[#666666] dark:text-[#999999] mb-1 font-medium">Output:</div>
-              <pre className="overflow-x-auto max-h-48 text-[#1a1a1a] dark:text-[#F8F8F6] whitespace-pre-wrap">
+              <div className="text-muted-foreground mb-1 font-medium">Output:</div>
+              <pre className="overflow-x-auto max-h-48 text-foreground whitespace-pre-wrap">
                 {output}
               </pre>
             </div>
           )}
-          {!args && !output && <span className="text-[#999999]">No details available</span>}
+          {!args && !output && (
+            <span className="text-secondary-foreground">No details available</span>
+          )}
         </div>
       )}
     </div>

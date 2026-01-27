@@ -89,12 +89,7 @@ const MODEL_OPTIONS: { category: string; models: ModelOption[] }[] = [
 
 function CheckIcon() {
   return (
-    <svg
-      className="w-4 h-4 text-[#8B7355] dark:text-[#a68b6a]"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
+    <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
     </svg>
   );
@@ -113,13 +108,13 @@ function ModelOptionButton({
     <button
       type="button"
       onClick={onSelect}
-      className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5 transition ${
-        isSelected ? "text-[#1a1a1a] dark:text-[#F8F8F6]" : "text-[#666666] dark:text-[#999999]"
+      className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-muted transition ${
+        isSelected ? "text-foreground" : "text-muted-foreground"
       }`}
     >
       <div className="flex flex-col items-start">
         <span className="font-medium">{model.name}</span>
-        <span className="text-xs text-[#999999]">{model.description}</span>
+        <span className="text-xs text-secondary-foreground">{model.description}</span>
       </div>
       {isSelected && <CheckIcon />}
     </button>
@@ -245,7 +240,7 @@ export default function SessionPage() {
   if (authStatus === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1a1a1a] dark:border-[#F8F8F6]" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground" />
       </div>
     );
   }
@@ -372,23 +367,23 @@ function SessionContent({
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <header className="border-b border-black/5 dark:border-white/5 flex-shrink-0">
+      <header className="border-b border-border-muted flex-shrink-0">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {!isOpen && (
               <button
                 onClick={toggle}
-                className="p-1.5 text-[#666666] hover:text-[#1a1a1a] dark:text-[#999999] dark:hover:text-[#F8F8F6] hover:bg-black/5 dark:hover:bg-white/5 transition"
+                className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition"
                 title="Open sidebar"
               >
                 <SidebarToggleIcon />
               </button>
             )}
             <div>
-              <h1 className="font-medium text-[#1a1a1a] dark:text-[#F8F8F6]">
+              <h1 className="font-medium text-foreground">
                 {sessionState?.title || `${sessionState?.repoOwner}/${sessionState?.repoName}`}
               </h1>
-              <p className="text-sm text-[#666666] dark:text-[#999999]">
+              <p className="text-sm text-muted-foreground">
                 {sessionState?.repoOwner}/{sessionState?.repoName}
               </p>
             </div>
@@ -446,7 +441,7 @@ function SessionContent({
       </main>
 
       {/* Input */}
-      <footer className="border-t border-black/5 dark:border-white/5 flex-shrink-0">
+      <footer className="border-t border-border-muted flex-shrink-0">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto p-4 pb-6">
           {/* Action bar above input */}
           <div className="mb-3">
@@ -460,7 +455,7 @@ function SessionContent({
           </div>
 
           {/* Input container */}
-          <div className="border border-black/10 dark:border-white/10 bg-white dark:bg-[#1a1a1a]">
+          <div className="border border-border bg-input">
             {/* Text input area with floating send button */}
             <div className="relative">
               <textarea
@@ -469,7 +464,7 @@ function SessionContent({
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder={isSubmitting ? "Type your next message..." : "Ask or build anything"}
-                className="w-full resize-none bg-transparent px-4 pt-4 pb-12 focus:outline-none text-[#1a1a1a] dark:text-[#F8F8F6] placeholder-[#999999]"
+                className="w-full resize-none bg-transparent px-4 pt-4 pb-12 focus:outline-none text-foreground placeholder:text-secondary-foreground"
                 rows={3}
               />
               {/* Floating action buttons */}
@@ -492,7 +487,7 @@ function SessionContent({
                 <button
                   type="submit"
                   disabled={!prompt.trim() || isSubmitting}
-                  className="p-2 text-[#999999] hover:text-[#666666] dark:hover:text-[#F8F8F6] disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  className="p-2 text-secondary-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition"
                   title={isSubmitting && prompt.trim() ? "Wait for execution to complete" : "Send"}
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -508,14 +503,14 @@ function SessionContent({
             </div>
 
             {/* Footer row with model selector and agent label */}
-            <div className="flex items-center justify-between px-4 py-2 border-t border-black/5 dark:border-white/5">
+            <div className="flex items-center justify-between px-4 py-2 border-t border-border-muted">
               {/* Left side - Model selector */}
               <div className="relative" ref={modelDropdownRef}>
                 <button
                   type="button"
                   onClick={() => !isSubmitting && setModelDropdownOpen(!modelDropdownOpen)}
                   disabled={isSubmitting}
-                  className="flex items-center gap-1 text-sm text-[#666666] dark:text-[#999999] hover:text-[#1a1a1a] dark:hover:text-[#F8F8F6] disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition"
                 >
                   <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
@@ -525,12 +520,12 @@ function SessionContent({
 
                 {/* Dropdown menu */}
                 {modelDropdownOpen && (
-                  <div className="absolute bottom-full left-0 mb-2 w-56 bg-[#F8F8F6] dark:bg-[#1a1a1a] shadow-lg border border-black/10 dark:border-white/10 py-1 z-50">
+                  <div className="absolute bottom-full left-0 mb-2 w-56 bg-background shadow-lg border border-border py-1 z-50">
                     {MODEL_OPTIONS.map((group, groupIdx) => (
                       <div key={group.category}>
                         <div
-                          className={`px-3 py-1.5 text-xs font-medium text-[#999999] uppercase tracking-wider ${
-                            groupIdx > 0 ? "border-t border-black/5 dark:border-white/5 mt-1" : ""
+                          className={`px-3 py-1.5 text-xs font-medium text-secondary-foreground uppercase tracking-wider ${
+                            groupIdx > 0 ? "border-t border-border-muted mt-1" : ""
                           }`}
                         >
                           {group.category}
@@ -553,7 +548,7 @@ function SessionContent({
               </div>
 
               {/* Right side - Agent label */}
-              <span className="text-sm text-[#666666] dark:text-[#999999]">build agent</span>
+              <span className="text-sm text-muted-foreground">build agent</span>
             </div>
           </div>
         </form>
@@ -591,8 +586,8 @@ function ConnectionStatus({ connected, connecting }: { connected: boolean; conne
 
   if (connected) {
     return (
-      <span className="flex items-center gap-1 text-xs text-[#28c840]">
-        <span className="w-2 h-2 rounded-full bg-[#28c840]" />
+      <span className="flex items-center gap-1 text-xs text-success">
+        <span className="w-2 h-2 rounded-full bg-success" />
         Connected
       </span>
     );
@@ -610,12 +605,12 @@ function SandboxStatus({ status }: { status?: string }) {
   if (!status) return null;
 
   const colors: Record<string, string> = {
-    pending: "text-[#666666] dark:text-[#999999]",
+    pending: "text-muted-foreground",
     warming: "text-yellow-600 dark:text-yellow-500",
-    syncing: "text-[#8B7355] dark:text-[#a68b6a]",
-    ready: "text-[#28c840]",
-    running: "text-[#8B7355] dark:text-[#a68b6a]",
-    stopped: "text-[#666666] dark:text-[#999999]",
+    syncing: "text-accent",
+    ready: "text-success",
+    running: "text-accent",
+    stopped: "text-muted-foreground",
     failed: "text-red-600 dark:text-red-500",
   };
 
@@ -624,9 +619,9 @@ function SandboxStatus({ status }: { status?: string }) {
 
 function ThinkingIndicator() {
   return (
-    <div className="bg-[#F8F8F6] dark:bg-white/5 p-4 flex items-center gap-2">
-      <span className="inline-block w-2 h-2 bg-[#8B7355] dark:bg-[#a68b6a] rounded-full animate-pulse" />
-      <span className="text-sm text-[#666666] dark:text-[#999999]">Thinking...</span>
+    <div className="bg-card p-4 flex items-center gap-2">
+      <span className="inline-block w-2 h-2 bg-accent rounded-full animate-pulse" />
+      <span className="text-sm text-muted-foreground">Thinking...</span>
     </div>
   );
 }
@@ -646,14 +641,14 @@ function ParticipantsList({
       {uniqueParticipants.slice(0, 3).map((p) => (
         <div
           key={p.userId}
-          className="w-8 h-8 rounded-full bg-[#F8F8F6] dark:bg-white/10 flex items-center justify-center text-xs font-medium text-[#1a1a1a] dark:text-[#F8F8F6] border-2 border-white"
+          className="w-8 h-8 rounded-full bg-card flex items-center justify-center text-xs font-medium text-foreground border-2 border-white"
           title={p.name}
         >
           {p.name.charAt(0).toUpperCase()}
         </div>
       ))}
       {uniqueParticipants.length > 3 && (
-        <div className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center text-xs font-medium text-[#1a1a1a] dark:text-[#F8F8F6] border-2 border-white">
+        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-foreground border-2 border-white">
           +{uniqueParticipants.length - 3}
         </div>
       )}
@@ -698,19 +693,17 @@ function EventItem({
       const authorName = isCurrentUser ? "You" : event.author?.name || "Unknown User";
 
       return (
-        <div className="bg-[#8B7355]/10 dark:bg-[#8B7355]/20 p-4 ml-8">
+        <div className="bg-accent-muted p-4 ml-8">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               {!isCurrentUser && event.author?.avatar && (
                 <img src={event.author.avatar} alt={authorName} className="w-5 h-5 rounded-full" />
               )}
-              <span className="text-xs text-[#8B7355] dark:text-[#a68b6a]">{authorName}</span>
+              <span className="text-xs text-accent">{authorName}</span>
             </div>
-            <span className="text-xs text-[#999999]">{time}</span>
+            <span className="text-xs text-secondary-foreground">{time}</span>
           </div>
-          <pre className="whitespace-pre-wrap text-sm text-[#1a1a1a] dark:text-[#F8F8F6]">
-            {event.content}
-          </pre>
+          <pre className="whitespace-pre-wrap text-sm text-foreground">{event.content}</pre>
         </div>
       );
     }
@@ -719,10 +712,10 @@ function EventItem({
       // Display the model's text response with safe markdown rendering
       if (!event.content) return null;
       return (
-        <div className="bg-[#F8F8F6] dark:bg-white/5 p-4">
+        <div className="bg-card p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-[#666666] dark:text-[#999999]">Assistant</span>
-            <span className="text-xs text-[#999999]">{time}</span>
+            <span className="text-xs text-muted-foreground">Assistant</span>
+            <span className="text-xs text-secondary-foreground">{time}</span>
           </div>
           <SafeMarkdown content={event.content} className="text-sm" />
         </div>
@@ -747,14 +740,14 @@ function EventItem({
             />
           </svg>
           <span className="truncate">{event.error}</span>
-          <span className="text-xs text-[#999999] ml-auto">{time}</span>
+          <span className="text-xs text-secondary-foreground ml-auto">{time}</span>
         </div>
       );
 
     case "git_sync":
       return (
-        <div className="flex items-center gap-2 text-sm text-[#666666] dark:text-[#999999]">
-          <span className="w-2 h-2 rounded-full bg-[#8B7355] dark:bg-[#a68b6a]" />
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span className="w-2 h-2 rounded-full bg-accent" />
           Git sync: {event.status}
           <span className="text-xs">{time}</span>
         </div>
@@ -762,10 +755,10 @@ function EventItem({
 
     case "execution_complete":
       return (
-        <div className="flex items-center gap-2 text-sm text-[#28c840]">
-          <span className="w-2 h-2 rounded-full bg-[#28c840]" />
+        <div className="flex items-center gap-2 text-sm text-success">
+          <span className="w-2 h-2 rounded-full bg-success" />
           Execution complete
-          <span className="text-xs text-[#999999]">{time}</span>
+          <span className="text-xs text-secondary-foreground">{time}</span>
         </div>
       );
 

@@ -42,28 +42,28 @@ export function MetadataSection({
   const getPrBadgeStyles = (state?: string) => {
     switch (state) {
       case "merged":
-        return "bg-[#28c840]/10 text-[#28c840]";
+        return "bg-success-muted text-success";
       case "closed":
         return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
       case "draft":
-        return "bg-black/5 text-[#666666] dark:bg-white/10 dark:text-[#999999]";
+        return "bg-muted text-muted-foreground";
       case "open":
       default:
-        return "bg-[#8B7355]/10 text-[#8B7355] dark:bg-[#a68b6a]/20 dark:text-[#a68b6a]";
+        return "bg-accent-muted text-accent";
     }
   };
 
   return (
     <div className="space-y-3">
       {/* Timestamp */}
-      <div className="flex items-center gap-2 text-sm text-[#666666] dark:text-[#999999]">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <ClockIcon className="w-4 h-4" />
         <span>{formatRelativeTime(createdAt)}</span>
       </div>
 
       {/* Model */}
       {model && (
-        <div className="flex items-center gap-2 text-sm text-[#666666] dark:text-[#999999]">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <SparkleIcon className="w-4 h-4" />
           <span>{formatModelName(model)}</span>
         </div>
@@ -72,18 +72,18 @@ export function MetadataSection({
       {/* PR Badge */}
       {prNumber && (
         <div className="flex items-center gap-2 text-sm">
-          <GitHubIcon className="w-4 h-4 text-[#666666] dark:text-[#999999]" />
+          <GitHubIcon className="w-4 h-4 text-muted-foreground" />
           {prUrl ? (
             <a
               href={prUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[#8B7355] dark:text-[#a68b6a] hover:underline"
+              className="text-accent hover:underline"
             >
               #{prNumber}
             </a>
           ) : (
-            <span className="text-[#1a1a1a] dark:text-[#F8F8F6]">#{prNumber}</span>
+            <span className="text-foreground">#{prNumber}</span>
           )}
           {prState && (
             <span
@@ -98,22 +98,19 @@ export function MetadataSection({
       {/* Branch */}
       {branchName && (
         <div className="flex items-center gap-2 text-sm">
-          <BranchIcon className="w-4 h-4 text-[#666666] dark:text-[#999999]" />
-          <span
-            className="text-[#1a1a1a] dark:text-[#F8F8F6] truncate max-w-[180px]"
-            title={branchName}
-          >
+          <BranchIcon className="w-4 h-4 text-muted-foreground" />
+          <span className="text-foreground truncate max-w-[180px]" title={branchName}>
             {truncateBranch(branchName)}
           </span>
           <button
             onClick={handleCopyBranch}
-            className="p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            className="p-1 hover:bg-muted transition-colors"
             title={copied ? "Copied!" : "Copy branch name"}
           >
             {copied ? (
-              <CheckIcon className="w-3.5 h-3.5 text-[#28c840]" />
+              <CheckIcon className="w-3.5 h-3.5 text-success" />
             ) : (
-              <CopyIcon className="w-3.5 h-3.5 text-[#999999]" />
+              <CopyIcon className="w-3.5 h-3.5 text-secondary-foreground" />
             )}
           </button>
         </div>
@@ -122,12 +119,12 @@ export function MetadataSection({
       {/* Repository tag */}
       {repoOwner && repoName && (
         <div className="flex items-center gap-2 text-sm">
-          <GitHubIcon className="w-4 h-4 text-[#666666] dark:text-[#999999]" />
+          <GitHubIcon className="w-4 h-4 text-muted-foreground" />
           <a
             href={`https://github.com/${repoOwner}/${repoName}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[#8B7355] dark:text-[#a68b6a] hover:underline"
+            className="text-accent hover:underline"
           >
             {repoOwner}/{repoName}
           </a>

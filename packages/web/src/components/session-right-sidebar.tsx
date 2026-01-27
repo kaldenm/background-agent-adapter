@@ -59,12 +59,12 @@ export function SessionRightSidebar({
 
   if (!sessionState) {
     return (
-      <aside className="w-80 border-l border-black/5 dark:border-white/5 overflow-y-auto hidden lg:block">
+      <aside className="w-80 border-l border-border-muted overflow-y-auto hidden lg:block">
         <div className="p-4">
           <div className="animate-pulse space-y-4">
-            <div className="h-4 bg-black/5 dark:bg-white/10 w-3/4" />
-            <div className="h-4 bg-black/5 dark:bg-white/10 w-1/2" />
-            <div className="h-4 bg-black/5 dark:bg-white/10 w-2/3" />
+            <div className="h-4 bg-muted w-3/4" />
+            <div className="h-4 bg-muted w-1/2" />
+            <div className="h-4 bg-muted w-2/3" />
           </div>
         </div>
       </aside>
@@ -72,14 +72,14 @@ export function SessionRightSidebar({
   }
 
   return (
-    <aside className="w-80 border-l border-black/5 dark:border-white/5 overflow-y-auto hidden lg:block">
+    <aside className="w-80 border-l border-border-muted overflow-y-auto hidden lg:block">
       {/* Participants */}
-      <div className="px-4 py-4 border-b border-black/5 dark:border-white/5">
+      <div className="px-4 py-4 border-b border-border-muted">
         <ParticipantsSection participants={participants} />
       </div>
 
       {/* Metadata */}
-      <div className="px-4 py-4 border-b border-black/5 dark:border-white/5">
+      <div className="px-4 py-4 border-b border-border-muted">
         <MetadataSection
           createdAt={sessionState.createdAt}
           model={sessionState.model}
@@ -107,7 +107,7 @@ export function SessionRightSidebar({
       {/* Artifacts info when no specific sections are populated */}
       {tasks.length === 0 && filesChanged.length === 0 && artifacts.length === 0 && (
         <div className="px-4 py-4">
-          <p className="text-sm text-[#666666] dark:text-[#999999]">
+          <p className="text-sm text-muted-foreground">
             Tasks and file changes will appear here as the agent works.
           </p>
         </div>
