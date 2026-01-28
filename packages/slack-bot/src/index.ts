@@ -6,13 +6,14 @@
  */
 
 import { Hono } from "hono";
-import type { Env, RepoConfig, CallbackContext, ThreadSession } from "./types";
+import type { Env, RepoConfig, CallbackContext, ThreadSession, UserPreferences } from "./types";
 import {
   verifySlackSignature,
   postMessage,
   updateMessage,
   getChannelInfo,
   getThreadMessages,
+  publishView,
 } from "./utils/slack-client";
 import { createClassifier } from "./classifier";
 import { getAvailableRepos } from "./classifier/repos";
@@ -36,12 +37,18 @@ async function getAuthHeaders(env: Env): Promise<Record<string, string>> {
 }
 
 /**
+ * Default model when no preference is set.
+ */
+const DEFAULT_FALLBACK_MODEL = "claude-haiku-4-5";
+
+/**
  * Create a session via the control plane.
  */
 async function createSession(
   env: Env,
   repo: RepoConfig,
-  title?: string
+  title?: string,
+  model?: string
 ): Promise<{ sessionId: string; status: string } | null> {
   try {
     const headers = await getAuthHeaders(env);
@@ -52,7 +59,7 @@ async function createSession(
         repoOwner: repo.owner,
         repoName: repo.name,
         title: title || `Slack: ${repo.name}`,
-        model: env.DEFAULT_MODEL || "claude-haiku-4-5",
+        model: model || env.DEFAULT_MODEL || DEFAULT_FALLBACK_MODEL,
       }),
     });
 
@@ -168,6 +175,163 @@ async function clearThreadSession(env: Env, channel: string, threadTs: string): 
 }
 
 /**
+ * Available Claude models for user selection.
+ */
+const AVAILABLE_MODELS = [
+  { label: "Claude Haiku 4.5 (Fast)", value: "claude-haiku-4-5" },
+  { label: "Claude Sonnet 4.5 (Balanced)", value: "claude-sonnet-4-5" },
+  { label: "Claude Opus 4.5 (Powerful)", value: "claude-opus-4-5" },
+];
+
+/**
+ * Check if a model value is valid (exists in AVAILABLE_MODELS).
+ */
+function isValidModel(model: string): boolean {
+  return AVAILABLE_MODELS.some((m) => m.value === model);
+}
+
+/**
+ * Normalize a model value to ensure it's valid.
+ * Returns the model if valid, otherwise returns the fallback.
+ */
+function normalizeModel(model: string | undefined, fallback: string): string {
+  if (model && isValidModel(model)) {
+    return model;
+  }
+  return fallback;
+}
+
+/**
+ * Generate a consistent KV key for user preferences.
+ */
+function getUserPreferencesKey(userId: string): string {
+  return `user_prefs:${userId}`;
+}
+
+/**
+ * Type guard to validate UserPreferences shape from KV.
+ */
+function isValidUserPreferences(data: unknown): data is UserPreferences {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return false;
+  }
+  const obj = data as Record<string, unknown>;
+  return (
+    typeof obj.userId === "string" &&
+    typeof obj.model === "string" &&
+    typeof obj.updatedAt === "number"
+  );
+}
+
+/**
+ * Look up user preferences from KV.
+ */
+async function getUserPreferences(env: Env, userId: string): Promise<UserPreferences | null> {
+  try {
+    const key = getUserPreferencesKey(userId);
+    const data = await env.SLACK_KV.get(key, "json");
+    if (isValidUserPreferences(data)) {
+      return data;
+    }
+    return null;
+  } catch (e) {
+    console.error(`Error getting user preferences for ${userId}:`, e);
+    return null;
+  }
+}
+
+/**
+ * Save user preferences to KV.
+ * @returns true if saved successfully, false otherwise
+ */
+async function saveUserPreferences(env: Env, userId: string, model: string): Promise<boolean> {
+  try {
+    const key = getUserPreferencesKey(userId);
+    const prefs: UserPreferences = {
+      userId,
+      model,
+      updatedAt: Date.now(),
+    };
+    // No TTL - preferences persist indefinitely
+    await env.SLACK_KV.put(key, JSON.stringify(prefs));
+    return true;
+  } catch (e) {
+    console.error(`Error saving user preferences for ${userId}:`, e);
+    return false;
+  }
+}
+
+/**
+ * Publish the App Home view for a user.
+ */
+async function publishAppHome(env: Env, userId: string): Promise<void> {
+  const prefs = await getUserPreferences(env, userId);
+  const fallback = env.DEFAULT_MODEL || DEFAULT_FALLBACK_MODEL;
+  // Normalize model to ensure it's valid - UI and behavior will be consistent
+  const currentModel = normalizeModel(prefs?.model, fallback);
+  const currentModelInfo =
+    AVAILABLE_MODELS.find((m) => m.value === currentModel) || AVAILABLE_MODELS[0];
+
+  const view = {
+    type: "home",
+    blocks: [
+      {
+        type: "header",
+        text: { type: "plain_text", text: "Settings" },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "Configure your Open-Inspect preferences below.",
+        },
+      },
+      { type: "divider" },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*Model*\nSelect the Claude model for your coding sessions:",
+        },
+      },
+      {
+        type: "actions",
+        block_id: "model_selection",
+        elements: [
+          {
+            type: "static_select",
+            action_id: "select_model",
+            initial_option: {
+              text: { type: "plain_text", text: currentModelInfo.label },
+              value: currentModelInfo.value,
+            },
+            options: AVAILABLE_MODELS.map((m) => ({
+              text: { type: "plain_text", text: m.label },
+              value: m.value,
+            })),
+          },
+        ],
+      },
+      { type: "divider" },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `Currently using: *${currentModelInfo.label}*`,
+          },
+        ],
+      },
+    ],
+  };
+
+  const result = await publishView(env.SLACK_BOT_TOKEN, userId, view);
+  if (!result.ok) {
+    console.error(`Failed to publish App Home for ${userId}:`, result.error);
+  }
+}
+
+/**
  * Build a ThreadSession object for storage.
  */
 function buildThreadSession(sessionId: string, repo: RepoConfig, model: string): ThreadSession {
@@ -194,8 +358,13 @@ async function startSessionAndSendPrompt(
   messageText: string,
   userId: string
 ): Promise<{ sessionId: string } | null> {
-  // Create session via control plane
-  const session = await createSession(env, repo, messageText.slice(0, 100));
+  // Fetch user's preferred model and validate it
+  const userPrefs = await getUserPreferences(env, userId);
+  const fallback = env.DEFAULT_MODEL || DEFAULT_FALLBACK_MODEL;
+  const model = normalizeModel(userPrefs?.model, fallback);
+
+  // Create session via control plane with user's preferred model
+  const session = await createSession(env, repo, messageText.slice(0, 100), model);
 
   if (!session) {
     await postMessage(
@@ -207,7 +376,6 @@ async function startSessionAndSendPrompt(
     return null;
   }
 
-  const model = env.DEFAULT_MODEL || "claude-haiku-4-5";
   await storeThreadSession(
     env,
     channel,
@@ -371,6 +539,7 @@ async function handleSlackEvent(
       ts?: string;
       thread_ts?: string;
       bot_id?: string;
+      tab?: string;
     };
   },
   env: Env
@@ -383,6 +552,12 @@ async function handleSlackEvent(
 
   // Ignore bot messages to prevent loops
   if (event.bot_id) {
+    return;
+  }
+
+  // Handle app_home_opened events
+  if (event.type === "app_home_opened" && event.tab === "home" && event.user) {
+    await publishAppHome(env, event.user);
     return;
   }
 
@@ -726,13 +901,22 @@ async function handleSlackInteraction(
   const channel = payload.channel?.id;
   const messageTs = payload.message?.ts;
   const threadTs = payload.message?.thread_ts;
-
-  if (!channel || !messageTs) {
-    return;
-  }
+  const userId = payload.user?.id;
 
   switch (action.action_id) {
+    case "select_model": {
+      // Handle model selection from App Home
+      const selectedModel = action.selected_option?.value;
+      // Validate the selected model before saving
+      if (selectedModel && userId && isValidModel(selectedModel)) {
+        await saveUserPreferences(env, userId, selectedModel);
+        await publishAppHome(env, userId);
+      }
+      break;
+    }
+
     case "select_repo": {
+      if (!channel || !messageTs) return;
       const repoId = action.selected_option?.value;
       if (repoId) {
         await handleRepoSelection(repoId, channel, messageTs, threadTs, env);
