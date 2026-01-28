@@ -28,9 +28,7 @@ export default function NewSessionPage() {
   const models = [
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", description: "Fast & affordable" },
     { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", description: "Balanced performance" },
-    { id: "opencode/big-pickle", name: "Big Pickle", description: "Free on OpenCode" },
-    { id: "opencode/glm-4.7-free", name: "GLM 4.7", description: "Free on OpenCode" },
-    { id: "opencode/grok-code", name: "Grok Code", description: "Free on OpenCode" },
+    { id: "claude-opus-4-5", name: "Claude Opus 4.5", description: "Most capable" },
   ];
 
   useEffect(() => {
