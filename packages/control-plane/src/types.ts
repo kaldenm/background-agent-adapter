@@ -115,7 +115,8 @@ export type ServerMessage =
   | { type: "snapshot_saved"; imageId: string; reason: string }
   | { type: "sandbox_restored"; message: string }
   | { type: "sandbox_warning"; message: string }
-  | { type: "session_status"; status: SessionStatus };
+  | { type: "session_status"; status: SessionStatus }
+  | { type: "processing_status"; isProcessing: boolean };
 
 // Sandbox events (from Modal)
 export type SandboxEvent =
@@ -201,6 +202,7 @@ export interface SessionState {
   sandboxStatus: SandboxStatus;
   messageCount: number;
   createdAt: number;
+  isProcessing: boolean;
 }
 
 // Participant presence

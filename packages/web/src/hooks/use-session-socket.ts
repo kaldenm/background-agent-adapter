@@ -49,6 +49,7 @@ interface SessionState {
   messageCount: number;
   createdAt: number;
   model?: string;
+  isProcessing: boolean;
 }
 
 interface Participant {
@@ -71,6 +72,7 @@ interface UseSessionSocketReturn {
   participants: Participant[];
   artifacts: Artifact[];
   currentParticipantId: string | null;
+  isProcessing: boolean;
   sendPrompt: (content: string, model?: string) => void;
   stopExecution: () => void;
   sendTyping: () => void;
@@ -120,6 +122,7 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
       error?: string;
       participantId?: string;
       participant?: { participantId: string; name: string; avatar?: string };
+      isProcessing?: boolean;
     }) => {
       switch (data.type) {
         case "subscribed":
@@ -252,6 +255,13 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
         case "session_status":
           if (data.status) {
             setSessionState((prev) => (prev ? { ...prev, status: data.status! } : null));
+          }
+          break;
+
+        case "processing_status":
+          if (typeof data.isProcessing === "boolean") {
+            const isProcessing = data.isProcessing;
+            setSessionState((prev) => (prev ? { ...prev, isProcessing } : null));
           }
           break;
 
@@ -443,6 +453,10 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
     };
     setEvents((prev) => [...prev, userMessageEvent]);
 
+    // Optimistically set isProcessing for immediate feedback
+    // Server will confirm with processing_status message
+    setSessionState((prev) => (prev ? { ...prev, isProcessing: true } : null));
+
     wsRef.current.send(
       JSON.stringify({
         type: "prompt",
@@ -522,6 +536,8 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
     return () => clearInterval(pingInterval);
   }, []);
 
+  const isProcessing = sessionState?.isProcessing ?? false;
+
   return {
     connected,
     connecting,
@@ -533,6 +549,7 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
     participants,
     artifacts,
     currentParticipantId,
+    isProcessing,
     sendPrompt,
     stopExecution,
     sendTyping,

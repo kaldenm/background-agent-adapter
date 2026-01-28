@@ -1254,6 +1254,9 @@ export class SessionDO extends DurableObject<Env> {
           completionMessageId
         );
 
+        // Broadcast processing status change (after DB update so getIsProcessing is accurate)
+        this.broadcast({ type: "processing_status", isProcessing: this.getIsProcessing() });
+
         // Notify slack-bot of completion (fire-and-forget with retry)
         this.ctx.waitUntil(this.notifySlackBot(completionMessageId, event.success));
       } else {
@@ -1491,6 +1494,9 @@ export class SessionDO extends DurableObject<Env> {
       now,
       message.id
     );
+
+    // Broadcast processing status change (hardcoded true since we just set status above)
+    this.broadcast({ type: "processing_status", isProcessing: true });
 
     // Reset activity timer - user is actively using the sandbox
     this.updateLastActivity(now);
@@ -1746,6 +1752,8 @@ export class SessionDO extends DurableObject<Env> {
 
   /**
    * Stop current execution.
+   * Sends stop command to sandbox, which should respond with execution_complete.
+   * The processing status will be updated when execution_complete is received.
    */
   private async stopExecution(): Promise<void> {
     if (this.sandboxWs) {
@@ -1802,6 +1810,7 @@ export class SessionDO extends DurableObject<Env> {
     const session = this.getSession();
     const sandbox = this.getSandbox();
     const messageCount = this.getMessageCount();
+    const isProcessing = this.getIsProcessing();
 
     return {
       id: session?.id ?? this.ctx.id.toString(),
@@ -1813,7 +1822,16 @@ export class SessionDO extends DurableObject<Env> {
       sandboxStatus: sandbox?.status ?? "pending",
       messageCount,
       createdAt: session?.created_at ?? Date.now(),
+      isProcessing,
     };
+  }
+
+  /**
+   * Check if any message is currently being processed.
+   */
+  private getIsProcessing(): boolean {
+    const result = this.sql.exec(`SELECT id FROM messages WHERE status = 'processing' LIMIT 1`);
+    return result.toArray().length > 0;
   }
 
   // Database helpers
