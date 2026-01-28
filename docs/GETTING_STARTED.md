@@ -373,7 +373,15 @@ Terraform will update the workers with the required bindings.
 
 ## Step 7b: Complete Slack Setup (If Using Slack)
 
-Now that the Slack bot worker is deployed, configure Event Subscriptions:
+Now that the Slack bot worker is deployed, configure the App Home and Event Subscriptions.
+
+### Enable App Home
+
+The App Home provides a settings interface where users can configure their preferred Claude model.
+
+1. Go to your Slack App → **App Home**
+2. Under **Show Tabs**, toggle **"Home Tab"** to On
+3. Click **Save Changes**
 
 ### Configure Event Subscriptions
 
@@ -387,6 +395,7 @@ Now that the Slack bot worker is deployed, configure Event Subscriptions:
    your deployment name from terraform.tfvars)
 4. Wait for the green **"Verified"** checkmark
 5. Under **Subscribe to bot events**, add:
+   - `app_home_opened` (required for App Home settings)
    - `app_mention`
    - `message.channels` (optional - if you want the bot to see all channel messages)
 6. Click **Save Changes**

@@ -147,7 +147,8 @@ Guide user:
 2. OAuth & Permissions → Add scopes: `app_mentions:read`, `chat:write`, `channels:history`
 3. Install to Workspace, note **Bot Token** (`xoxb-...`)
 4. Basic Information → note **Signing Secret**
-5. **Event Subscriptions configured AFTER deployment** (worker must be running for URL verification)
+5. **App Home and Event Subscriptions configured AFTER deployment** (worker must be running for URL
+   verification)
 
 ## Phase 6: Generate Security Secrets
 
@@ -204,12 +205,27 @@ terraform apply
 
 After Terraform deployment, guide user:
 
+### Enable App Home
+
+1. App Home → Show Tabs → Enable **"Home Tab"**
+2. Save Changes
+
+The App Home provides a settings interface where users can configure their preferred Claude model.
+
+### Configure Event Subscriptions
+
 1. Event Subscriptions → Enable → Request URL:
    `https://open-inspect-slack-bot-{deployment_name}.{subdomain}.workers.dev/events`
 2. Wait for "Verified" checkmark
-3. Subscribe to bot events: `app_mention`
+3. Subscribe to bot events: `app_home_opened`, `app_mention`
+
+### Configure Interactivity
+
 4. Interactivity → Enable → Request URL:
    `https://open-inspect-slack-bot-{deployment_name}.{subdomain}.workers.dev/interactions`
+
+### Invite Bot to Channels
+
 5. Invite bot to channels: `/invite @BotName`
 
 ## Phase 10: Web App Deployment
