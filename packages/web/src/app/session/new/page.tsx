@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { SidebarLayout, useSidebarContext } from "@/components/sidebar-layout";
 
 interface Repo {
@@ -21,9 +21,14 @@ export default function NewSessionPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState<string>("");
-  const [title, setTitle] = useState("");
+  const [prompt, setPrompt] = useState("");
   const [selectedModel, setSelectedModel] = useState<string>("claude-haiku-4-5");
   const [error, setError] = useState("");
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const sessionCreationPromise = useRef<Promise<string | null> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const pendingConfigRef = useRef<{ repo: string; model: string } | null>(null);
 
   const models = [
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", description: "Fast & affordable" },
@@ -43,6 +48,17 @@ export default function NewSessionPage() {
     }
   }, [session]);
 
+  useEffect(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setPendingSessionId(null);
+    setIsCreatingSession(false);
+    sessionCreationPromise.current = null;
+    pendingConfigRef.current = null;
+  }, [selectedRepo, selectedModel]);
+
   const fetchRepos = async () => {
     setLoading(true);
     try {
@@ -58,8 +74,78 @@ export default function NewSessionPage() {
     }
   };
 
+  const createSessionForWarming = useCallback(async () => {
+    if (pendingSessionId) return pendingSessionId;
+    if (sessionCreationPromise.current) return sessionCreationPromise.current;
+    if (!selectedRepo) return null;
+
+    setIsCreatingSession(true);
+    const [owner, name] = selectedRepo.split("/");
+    const currentConfig = { repo: selectedRepo, model: selectedModel };
+    pendingConfigRef.current = currentConfig;
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    const promise = (async () => {
+      try {
+        const res = await fetch("/api/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repoOwner: owner,
+            repoName: name,
+            model: selectedModel,
+          }),
+          signal: abortController.signal,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (
+            pendingConfigRef.current?.repo === currentConfig.repo &&
+            pendingConfigRef.current?.model === currentConfig.model
+          ) {
+            setPendingSessionId(data.sessionId);
+            return data.sessionId as string;
+          }
+          return null;
+        }
+        return null;
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return null;
+        }
+        console.error("Failed to create session for warming:", error);
+        return null;
+      } finally {
+        if (abortControllerRef.current === abortController) {
+          setIsCreatingSession(false);
+          sessionCreationPromise.current = null;
+          abortControllerRef.current = null;
+        }
+      }
+    })();
+
+    sessionCreationPromise.current = promise;
+    return promise;
+  }, [selectedRepo, selectedModel, pendingSessionId]);
+
+  const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    const wasEmpty = prompt.length === 0;
+    setPrompt(value);
+    if (wasEmpty && value.length > 0 && !pendingSessionId && !isCreatingSession && selectedRepo) {
+      createSessionForWarming();
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!prompt.trim()) {
+      setError("Please enter a prompt");
+      return;
+    }
     if (!selectedRepo) {
       setError("Please select a repository");
       return;
@@ -68,30 +154,36 @@ export default function NewSessionPage() {
     setCreating(true);
     setError("");
 
-    const [owner, name] = selectedRepo.split("/");
-
     try {
-      const res = await fetch("/api/sessions", {
+      let sessionId = pendingSessionId;
+      if (!sessionId) {
+        sessionId = await createSessionForWarming();
+      }
+
+      if (!sessionId) {
+        setError("Failed to create session");
+        setCreating(false);
+        return;
+      }
+
+      const res = await fetch(`/api/sessions/${sessionId}/prompt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          repoOwner: owner,
-          repoName: name,
-          title: title || undefined,
+          content: prompt,
           model: selectedModel,
         }),
       });
 
       if (res.ok) {
-        const data = await res.json();
-        router.push(`/session/${data.sessionId}`);
+        router.push(`/session/${sessionId}`);
       } else {
         const data = await res.json();
-        setError(data.error || "Failed to create session");
+        setError(data.error || "Failed to send prompt");
+        setCreating(false);
       }
     } catch (_error) {
       setError("Failed to create session");
-    } finally {
       setCreating(false);
     }
   };
@@ -110,13 +202,14 @@ export default function NewSessionPage() {
         repos={repos}
         selectedRepo={selectedRepo}
         setSelectedRepo={setSelectedRepo}
-        title={title}
-        setTitle={setTitle}
+        prompt={prompt}
+        handlePromptChange={handlePromptChange}
         selectedModel={selectedModel}
         setSelectedModel={setSelectedModel}
         models={models}
         error={error}
         creating={creating}
+        isCreatingSession={isCreatingSession}
         handleSubmit={handleSubmit}
       />
     </SidebarLayout>
@@ -127,25 +220,27 @@ function NewSessionContent({
   repos,
   selectedRepo,
   setSelectedRepo,
-  title,
-  setTitle,
+  prompt,
+  handlePromptChange,
   selectedModel,
   setSelectedModel,
   models,
   error,
   creating,
+  isCreatingSession,
   handleSubmit,
 }: {
   repos: Repo[];
   selectedRepo: string;
   setSelectedRepo: (value: string) => void;
-  title: string;
-  setTitle: (value: string) => void;
+  prompt: string;
+  handlePromptChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   selectedModel: string;
   setSelectedModel: (value: string) => void;
   models: { id: string; name: string; description: string }[];
   error: string;
   creating: boolean;
+  isCreatingSession: boolean;
   handleSubmit: (e: React.FormEvent) => void;
 }) {
   const { isOpen, toggle } = useSidebarContext();
@@ -202,18 +297,21 @@ function NewSessionContent({
 
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
-                Title (optional)
+                What do you want to build?
               </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Add user authentication"
-                className="w-full px-4 py-3 border border-border bg-transparent text-foreground focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-secondary-foreground"
+              <textarea
+                value={prompt}
+                onChange={handlePromptChange}
+                placeholder="Describe what you want to build or fix..."
+                rows={4}
+                className="w-full px-4 py-3 border border-border bg-transparent text-foreground focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-secondary-foreground resize-none"
+                required
               />
+              {isCreatingSession && (
+                <p className="mt-2 text-sm text-accent">Warming up sandbox...</p>
+              )}
               <p className="mt-2 text-sm text-muted-foreground">
-                A title helps identify the session. If not provided, the repository name will be
-                used.
+                The sandbox starts warming as soon as you begin typing.
               </p>
             </div>
 
@@ -238,10 +336,10 @@ function NewSessionContent({
 
             <button
               type="submit"
-              disabled={creating || !selectedRepo}
+              disabled={creating || !selectedRepo || !prompt.trim()}
               className="w-full py-3 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
-              {creating ? "Creating..." : "Create Session"}
+              {creating ? "Starting..." : "Start Building"}
             </button>
           </form>
         </div>
