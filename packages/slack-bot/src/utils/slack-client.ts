@@ -192,3 +192,23 @@ export async function getThreadMessages(
     error?: string;
   }>;
 }
+
+/**
+ * Publish a view to a user's App Home tab.
+ */
+export async function publishView(
+  token: string,
+  userId: string,
+  view: Record<string, unknown>
+): Promise<{ ok: boolean; error?: string }> {
+  const response = await fetch("https://slack.com/api/views.publish", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id: userId, view }),
+  });
+
+  return response.json() as Promise<{ ok: boolean; error?: string }>;
+}

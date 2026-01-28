@@ -224,3 +224,12 @@ export interface AgentResponse {
   artifacts: ArtifactInfo[];
   success: boolean;
 }
+
+/**
+ * User preferences stored in KV.
+ */
+export interface UserPreferences {
+  userId: string;
+  model: string;
+  updatedAt: number;
+}
