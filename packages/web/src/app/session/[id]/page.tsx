@@ -137,6 +137,7 @@ export default function SessionPage() {
     participants,
     artifacts,
     currentParticipantId,
+    isProcessing,
     sendPrompt,
     stopExecution,
     sendTyping,
@@ -170,7 +171,6 @@ export default function SessionPage() {
   }, [sessionId]);
 
   const [prompt, setPrompt] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedModel, setSelectedModel] = useState("claude-haiku-4-5");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -203,11 +203,10 @@ export default function SessionPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || isSubmitting) return;
+    if (!prompt.trim() || isProcessing) return;
 
     sendPrompt(prompt, selectedModel);
     setPrompt("");
-    setIsSubmitting(true);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -228,14 +227,6 @@ export default function SessionPage() {
       sendTyping();
     }, 300);
   };
-
-  // Clear submitting when execution completes
-  useEffect(() => {
-    const lastEvent = events[events.length - 1];
-    if (lastEvent?.type === "execution_complete") {
-      setIsSubmitting(false);
-    }
-  }, [events]);
 
   if (authStatus === "loading") {
     return (
@@ -260,7 +251,7 @@ export default function SessionPage() {
         currentParticipantId={currentParticipantId}
         messagesEndRef={messagesEndRef}
         prompt={prompt}
-        isSubmitting={isSubmitting}
+        isProcessing={isProcessing}
         selectedModel={selectedModel}
         modelDropdownOpen={modelDropdownOpen}
         modelDropdownRef={modelDropdownRef}
@@ -291,7 +282,7 @@ function SessionContent({
   currentParticipantId,
   messagesEndRef,
   prompt,
-  isSubmitting,
+  isProcessing,
   selectedModel,
   modelDropdownOpen,
   modelDropdownRef,
@@ -317,7 +308,7 @@ function SessionContent({
   currentParticipantId: string | null;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   prompt: string;
-  isSubmitting: boolean;
+  isProcessing: boolean;
   selectedModel: string;
   modelDropdownOpen: boolean;
   modelDropdownRef: React.RefObject<HTMLDivElement | null>;
@@ -425,7 +416,7 @@ function SessionContent({
                 />
               )
             )}
-            {isSubmitting && <ThinkingIndicator />}
+            {isProcessing && <ThinkingIndicator />}
 
             <div ref={messagesEndRef} />
           </div>
@@ -463,16 +454,16 @@ function SessionContent({
                 value={prompt}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder={isSubmitting ? "Type your next message..." : "Ask or build anything"}
+                placeholder={isProcessing ? "Type your next message..." : "Ask or build anything"}
                 className="w-full resize-none bg-transparent px-4 pt-4 pb-12 focus:outline-none text-foreground placeholder:text-secondary-foreground"
                 rows={3}
               />
               {/* Floating action buttons */}
               <div className="absolute bottom-3 right-3 flex items-center gap-2">
-                {isSubmitting && prompt.trim() && (
+                {isProcessing && prompt.trim() && (
                   <span className="text-xs text-amber-600 dark:text-amber-400">Waiting...</span>
                 )}
-                {isSubmitting && (
+                {isProcessing && (
                   <button
                     type="button"
                     onClick={stopExecution}
@@ -486,9 +477,9 @@ function SessionContent({
                 )}
                 <button
                   type="submit"
-                  disabled={!prompt.trim() || isSubmitting}
+                  disabled={!prompt.trim() || isProcessing}
                   className="p-2 text-secondary-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition"
-                  title={isSubmitting && prompt.trim() ? "Wait for execution to complete" : "Send"}
+                  title={isProcessing && prompt.trim() ? "Wait for execution to complete" : "Send"}
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
@@ -508,8 +499,8 @@ function SessionContent({
               <div className="relative" ref={modelDropdownRef}>
                 <button
                   type="button"
-                  onClick={() => !isSubmitting && setModelDropdownOpen(!modelDropdownOpen)}
-                  disabled={isSubmitting}
+                  onClick={() => !isProcessing && setModelDropdownOpen(!modelDropdownOpen)}
+                  disabled={isProcessing}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition"
                 >
                   <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
