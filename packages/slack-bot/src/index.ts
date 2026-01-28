@@ -184,10 +184,43 @@ const AVAILABLE_MODELS = [
 ];
 
 /**
+ * Check if a model value is valid (exists in AVAILABLE_MODELS).
+ */
+function isValidModel(model: string): boolean {
+  return AVAILABLE_MODELS.some((m) => m.value === model);
+}
+
+/**
+ * Normalize a model value to ensure it's valid.
+ * Returns the model if valid, otherwise returns the fallback.
+ */
+function normalizeModel(model: string | undefined, fallback: string): string {
+  if (model && isValidModel(model)) {
+    return model;
+  }
+  return fallback;
+}
+
+/**
  * Generate a consistent KV key for user preferences.
  */
 function getUserPreferencesKey(userId: string): string {
   return `user_prefs:${userId}`;
+}
+
+/**
+ * Type guard to validate UserPreferences shape from KV.
+ */
+function isValidUserPreferences(data: unknown): data is UserPreferences {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return false;
+  }
+  const obj = data as Record<string, unknown>;
+  return (
+    typeof obj.userId === "string" &&
+    typeof obj.model === "string" &&
+    typeof obj.updatedAt === "number"
+  );
 }
 
 /**
@@ -197,8 +230,8 @@ async function getUserPreferences(env: Env, userId: string): Promise<UserPrefere
   try {
     const key = getUserPreferencesKey(userId);
     const data = await env.SLACK_KV.get(key, "json");
-    if (data && typeof data === "object") {
-      return data as UserPreferences;
+    if (isValidUserPreferences(data)) {
+      return data;
     }
     return null;
   } catch (e) {
@@ -233,7 +266,9 @@ async function saveUserPreferences(env: Env, userId: string, model: string): Pro
  */
 async function publishAppHome(env: Env, userId: string): Promise<void> {
   const prefs = await getUserPreferences(env, userId);
-  const currentModel = prefs?.model || env.DEFAULT_MODEL || DEFAULT_FALLBACK_MODEL;
+  const fallback = env.DEFAULT_MODEL || DEFAULT_FALLBACK_MODEL;
+  // Normalize model to ensure it's valid - UI and behavior will be consistent
+  const currentModel = normalizeModel(prefs?.model, fallback);
   const currentModelInfo =
     AVAILABLE_MODELS.find((m) => m.value === currentModel) || AVAILABLE_MODELS[0];
 
@@ -318,9 +353,10 @@ async function startSessionAndSendPrompt(
   messageText: string,
   userId: string
 ): Promise<{ sessionId: string } | null> {
-  // Fetch user's preferred model
+  // Fetch user's preferred model and validate it
   const userPrefs = await getUserPreferences(env, userId);
-  const model = userPrefs?.model || env.DEFAULT_MODEL || DEFAULT_FALLBACK_MODEL;
+  const fallback = env.DEFAULT_MODEL || DEFAULT_FALLBACK_MODEL;
+  const model = normalizeModel(userPrefs?.model, fallback);
 
   // Create session via control plane with user's preferred model
   const session = await createSession(env, repo, messageText.slice(0, 100), model);
@@ -866,7 +902,8 @@ async function handleSlackInteraction(
     case "select_model": {
       // Handle model selection from App Home
       const selectedModel = action.selected_option?.value;
-      if (selectedModel && userId) {
+      // Validate the selected model before saving
+      if (selectedModel && userId && isValidModel(selectedModel)) {
         await saveUserPreferences(env, userId, selectedModel);
         await publishAppHome(env, userId);
       }
