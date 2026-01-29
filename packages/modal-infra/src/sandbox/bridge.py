@@ -220,17 +220,19 @@ class AgentBridge:
 
         Fatal errors indicate the session is invalid or terminated, not a
         transient network issue. These include:
-        - HTTP 410 (Gone): Session terminated, sandbox stopped/stale
         - HTTP 401 (Unauthorized): Auth token invalid or expired
+        - HTTP 403 (Forbidden): Access denied
         - HTTP 404 (Not Found): Session doesn't exist
+        - HTTP 410 (Gone): Session terminated, sandbox stopped/stale
 
         For these errors, retrying is futile - the bridge should exit and
         allow the control plane to spawn a new sandbox if needed.
         """
         fatal_patterns = [
-            "HTTP 410",  # Session terminated (stopped/stale)
             "HTTP 401",  # Unauthorized
+            "HTTP 403",  # Forbidden
             "HTTP 404",  # Session not found
+            "HTTP 410",  # Session terminated (stopped/stale)
         ]
         return any(pattern in error_str for pattern in fatal_patterns)
 
@@ -292,8 +294,8 @@ class AgentBridge:
                     self.ws = None
 
         except InvalidStatus as e:
-            status = e.response.status_code
-            if status in (401, 404, 410):
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status in (401, 403, 404, 410):
                 raise SessionTerminatedError(
                     f"Session rejected by control plane (HTTP {status})."
                 ) from e
