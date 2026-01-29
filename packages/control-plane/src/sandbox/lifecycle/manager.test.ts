@@ -343,6 +343,82 @@ describe("SandboxLifecycleManager", () => {
       expect(provider.createSandbox).not.toHaveBeenCalled();
     });
 
+    it("resets isSpawningSandbox flag after restore throws error", async () => {
+      const sandbox = createMockSandbox({
+        status: "stopped",
+        snapshot_image_id: "img-abc123",
+      });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const broadcaster = createMockBroadcaster();
+      const wsManager = createMockWebSocketManager(false);
+      const provider = createMockProvider({
+        restoreFromSnapshot: vi.fn(async () => {
+          throw new SandboxProviderError("Network timeout", "transient");
+        }),
+      });
+
+      const manager = new SandboxLifecycleManager(
+        provider,
+        storage,
+        broadcaster,
+        wsManager,
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      // Before spawn, should not be spawning
+      expect(manager.isSpawning()).toBe(false);
+
+      await manager.spawnSandbox();
+
+      // After failed restore, isSpawning should be reset to false
+      expect(manager.isSpawning()).toBe(false);
+      expect(storage.calls).toContain("updateSandboxStatus:failed");
+    });
+
+    it("resets isSpawningSandbox flag after restore returns failure", async () => {
+      const sandbox = createMockSandbox({
+        status: "stopped",
+        snapshot_image_id: "img-abc123",
+      });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const broadcaster = createMockBroadcaster();
+      const wsManager = createMockWebSocketManager(false);
+      const provider = createMockProvider({
+        restoreFromSnapshot: vi.fn(
+          async (): Promise<RestoreResult> => ({
+            success: false,
+            error: "Snapshot not found",
+          })
+        ),
+      });
+
+      const manager = new SandboxLifecycleManager(
+        provider,
+        storage,
+        broadcaster,
+        wsManager,
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      // Before spawn, should not be spawning
+      expect(manager.isSpawning()).toBe(false);
+
+      await manager.spawnSandbox();
+
+      // After failed restore (success=false), isSpawning should be reset to false
+      expect(manager.isSpawning()).toBe(false);
+      expect(storage.calls).toContain("updateSandboxStatus:failed");
+      expect(
+        broadcaster.messages.some(
+          (m) => (m as { type: string; error?: string }).error === "Snapshot not found"
+        )
+      ).toBe(true);
+    });
+
     it("updates status correctly through lifecycle", async () => {
       const sandbox = createMockSandbox({ status: "pending", created_at: Date.now() - 60000 });
       const storage = createMockStorage(createMockSession(), sandbox);

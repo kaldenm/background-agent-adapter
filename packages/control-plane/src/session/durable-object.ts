@@ -91,7 +91,6 @@ export class SessionDO extends DurableObject<Env> {
   private clients: Map<WebSocket, ClientInfo>;
   private sandboxWs: WebSocket | null = null;
   private initialized = false;
-  private isSpawningSandbox = false;
   // Track pending push operations by branch name
   private pendingPushResolvers = new Map<
     string,
@@ -395,7 +394,8 @@ export class SessionDO extends DurableObject<Env> {
         }
 
         this.sandboxWs = server;
-        this.isSpawningSandbox = false;
+        // Notify manager that sandbox connected so it can reset the spawning flag
+        this.lifecycleManager.onSandboxConnected();
         this.updateSandboxStatus("ready");
         this.broadcast({ type: "sandbox_status", status: "ready" });
 
@@ -878,7 +878,7 @@ export class SessionDO extends DurableObject<Env> {
   private async handleTyping(): Promise<void> {
     // If no sandbox or not connected, try to warm/spawn one
     if (!this.sandboxWs || this.sandboxWs.readyState !== WebSocket.OPEN) {
-      if (!this.isSpawningSandbox) {
+      if (!this.lifecycleManager.isSpawning()) {
         this.broadcast({ type: "sandbox_warming" });
         // Proactively spawn sandbox when user starts typing
         await this.spawnSandbox();
