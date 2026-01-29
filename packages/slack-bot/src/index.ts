@@ -345,6 +345,19 @@ function buildThreadSession(sessionId: string, repo: RepoConfig, model: string):
 }
 
 /**
+ * Format thread context for inclusion in a prompt.
+ * Returns a formatted string with previous messages from the thread.
+ */
+function formatThreadContext(previousMessages: string[]): string {
+  if (previousMessages.length === 0) {
+    return "";
+  }
+
+  const context = previousMessages.join("\n");
+  return `Context from the Slack thread:\n---\n${context}\n---\n\n`;
+}
+
+/**
  * Create a session and send the initial prompt.
  * Shared logic between handleAppMention and handleRepoSelection.
  *
@@ -356,7 +369,8 @@ async function startSessionAndSendPrompt(
   channel: string,
   threadTs: string,
   messageText: string,
-  userId: string
+  userId: string,
+  previousMessages?: string[]
 ): Promise<{ sessionId: string } | null> {
   // Fetch user's preferred model and validate it
   const userPrefs = await getUserPreferences(env, userId);
@@ -391,11 +405,15 @@ async function startSessionAndSendPrompt(
     model,
   };
 
+  // Build prompt content with thread context if available
+  const threadContext = previousMessages ? formatThreadContext(previousMessages) : "";
+  const promptContent = threadContext + messageText;
+
   // Send the prompt to the session
   const promptResult = await sendPrompt(
     env,
     session.sessionId,
-    messageText,
+    promptContent,
     `slack:${userId}`,
     callbackContext
   );
@@ -596,6 +614,23 @@ async function handleAppMention(
     return;
   }
 
+  // Get thread context if in a thread (include bot messages for better context)
+  // Fetched early so it's available for both existing session prompts and new sessions
+  let previousMessages: string[] | undefined;
+  if (thread_ts) {
+    try {
+      const threadResult = await getThreadMessages(env.SLACK_BOT_TOKEN, channel, thread_ts, 10);
+      if (threadResult.ok && threadResult.messages) {
+        previousMessages = threadResult.messages
+          .filter((m) => m.ts !== ts) // Exclude current message, but include bot messages
+          .map((m) => (m.bot_id ? `[Bot]: ${m.text}` : `[User]: ${m.text}`))
+          .slice(-10);
+      }
+    } catch {
+      // Thread messages not available
+    }
+  }
+
   if (thread_ts) {
     const existingSession = await lookupThreadSession(env, channel, thread_ts);
     if (existingSession) {
@@ -606,10 +641,13 @@ async function handleAppMention(
         model: existingSession.model,
       };
 
+      const threadContext = previousMessages ? formatThreadContext(previousMessages) : "";
+      const promptContent = threadContext + messageText;
+
       const promptResult = await sendPrompt(
         env,
         existingSession.sessionId,
-        messageText,
+        promptContent,
         `slack:${event.user}`,
         callbackContext
       );
@@ -637,22 +675,6 @@ async function handleAppMention(
     }
   } catch {
     // Channel info not available
-  }
-
-  // Get thread context if in a thread (include bot messages for better context)
-  let previousMessages: string[] | undefined;
-  if (thread_ts) {
-    try {
-      const threadResult = await getThreadMessages(env.SLACK_BOT_TOKEN, channel, thread_ts, 10);
-      if (threadResult.ok && threadResult.messages) {
-        previousMessages = threadResult.messages
-          .filter((m) => m.ts !== ts) // Exclude current message, but include bot messages
-          .map((m) => (m.bot_id ? `[Bot]: ${m.text}` : `[User]: ${m.text}`))
-          .slice(-10);
-      }
-    } catch {
-      // Thread messages not available
-    }
   }
 
   // Classify the repository
@@ -684,7 +706,7 @@ async function handleAppMention(
     const pendingKey = `pending:${channel}:${thread_ts || ts}`;
     await env.SLACK_KV.put(
       pendingKey,
-      JSON.stringify({ message: messageText, userId: event.user }),
+      JSON.stringify({ message: messageText, userId: event.user, previousMessages }),
       { expirationTtl: 3600 } // Expire after 1 hour
     );
 
@@ -769,7 +791,8 @@ async function handleAppMention(
     channel,
     threadKey,
     messageText,
-    event.user
+    event.user,
+    previousMessages
   );
 
   if (!sessionResult) {
@@ -833,7 +856,15 @@ async function handleRepoSelection(
     return;
   }
 
-  const { message: messageText, userId } = pendingData as { message: string; userId: string };
+  const {
+    message: messageText,
+    userId,
+    previousMessages,
+  } = pendingData as {
+    message: string;
+    userId: string;
+    previousMessages?: string[];
+  };
 
   // Find the repo config
   const repos = await getAvailableRepos(env);
@@ -863,7 +894,8 @@ async function handleRepoSelection(
     channel,
     threadKey,
     messageText,
-    userId
+    userId,
+    previousMessages
   );
 
   if (!sessionResult) {
