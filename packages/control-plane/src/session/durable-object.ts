@@ -14,6 +14,7 @@ import { generateInstallationToken, getGitHubAppConfig } from "../auth/github-ap
 import { createModalClient } from "../sandbox/client";
 import { createPullRequest, getRepository } from "../auth/pr";
 import { generateBranchName, generateInternalToken } from "@open-inspect/shared";
+import { DEFAULT_MODEL, isValidModel, extractProviderAndModel } from "../utils/models";
 import type {
   Env,
   ClientInfo,
@@ -50,12 +51,6 @@ function getGitHubAvatarUrl(githubLogin: string | null | undefined): string | un
 }
 
 /**
- * Valid model names for the LLM.
- */
-const VALID_MODELS = ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-opus-4-5"] as const;
-type ValidModel = (typeof VALID_MODELS)[number];
-
-/**
  * Valid event types for filtering.
  * Includes both external types (from types.ts) and internal types used by the sandbox.
  */
@@ -77,37 +72,12 @@ const VALID_EVENT_TYPES = [
 const VALID_MESSAGE_STATUSES = ["pending", "processing", "completed", "failed"] as const;
 
 /**
- * Check if a model name is valid.
- */
-function isValidModel(model: string): model is ValidModel {
-  return VALID_MODELS.includes(model as ValidModel);
-}
-
-/**
- * Default model to use when none specified or invalid.
- */
-const DEFAULT_MODEL: ValidModel = "claude-haiku-4-5";
-
-/**
  * Timeout for WebSocket authentication (in milliseconds).
  * Client WebSockets must send a valid 'subscribe' message within this time
  * or the connection will be closed. This prevents resource abuse from
  * unauthenticated connections that never complete the handshake.
  */
 const WS_AUTH_TIMEOUT_MS = 30000; // 30 seconds
-
-/**
- * Extract provider and model from a model ID.
- * Models with "/" have embedded provider (kept for backward compatibility with existing sessions).
- * Models like "claude-haiku-4-5" use "anthropic" as default provider.
- */
-function extractProviderAndModel(modelId: string): { provider: string; model: string } {
-  if (modelId.includes("/")) {
-    const [provider, ...modelParts] = modelId.split("/");
-    return { provider, model: modelParts.join("/") };
-  }
-  return { provider: "anthropic", model: modelId };
-}
 
 /**
  * Route definition for internal API endpoints.
