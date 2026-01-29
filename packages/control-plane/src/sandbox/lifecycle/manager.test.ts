@@ -343,6 +343,38 @@ describe("SandboxLifecycleManager", () => {
       expect(provider.createSandbox).not.toHaveBeenCalled();
     });
 
+    it("stores providerObjectId after successful restore for future snapshots", async () => {
+      const sandbox = createMockSandbox({
+        status: "stopped",
+        snapshot_image_id: "img-abc123",
+      });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const broadcaster = createMockBroadcaster();
+      const wsManager = createMockWebSocketManager(false);
+      const provider = createMockProvider({
+        restoreFromSnapshot: vi.fn(async (config: RestoreConfig) => ({
+          success: true,
+          sandboxId: config.sandboxId,
+          providerObjectId: "new-modal-obj-after-restore",
+        })),
+      });
+
+      const manager = new SandboxLifecycleManager(
+        provider,
+        storage,
+        broadcaster,
+        wsManager,
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      await manager.spawnSandbox();
+
+      // Verify providerObjectId was stored for future snapshots
+      expect(storage.calls).toContain("updateSandboxModalObjectId:new-modal-obj-after-restore");
+    });
+
     it("resets isSpawningSandbox flag after restore throws error", async () => {
       const sandbox = createMockSandbox({
         status: "stopped",

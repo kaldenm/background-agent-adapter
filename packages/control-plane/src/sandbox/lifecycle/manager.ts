@@ -371,6 +371,13 @@ export class SandboxLifecycleManager {
 
       if (result.success) {
         console.log(`[Manager] Sandbox restored: ${result.sandboxId}`);
+
+        // Store provider's internal object ID for future snapshots
+        if (result.providerObjectId) {
+          this.storage.updateSandboxModalObjectId(result.providerObjectId);
+          console.log(`[Manager] Stored provider object ID: ${result.providerObjectId}`);
+        }
+
         this.storage.updateSandboxStatus("connecting");
         this.broadcaster.broadcast({ type: "sandbox_status", status: "connecting" });
         this.broadcaster.broadcast({

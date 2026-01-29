@@ -319,7 +319,7 @@ export function evaluateInactivityTimeout(
   }
 
   // No activity recorded yet - schedule a check
-  if (!state.lastActivity) {
+  if (state.lastActivity == null) {
     return { action: "schedule", nextCheckMs: config.minCheckIntervalMs };
   }
 
@@ -409,7 +409,7 @@ export function evaluateHeartbeatHealth(
   now: number
 ): HeartbeatHealth {
   // No heartbeat recorded yet - not stale (sandbox may still be starting)
-  if (!lastHeartbeat) {
+  if (lastHeartbeat == null) {
     return { isStale: false };
   }
 

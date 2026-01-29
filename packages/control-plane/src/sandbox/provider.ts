@@ -92,6 +92,8 @@ export interface RestoreResult {
   success: boolean;
   /** Sandbox ID if successful */
   sandboxId?: string;
+  /** Provider's internal object ID (e.g., Modal's object ID for snapshot API) */
+  providerObjectId?: string;
   /** Error message if failed */
   error?: string;
 }

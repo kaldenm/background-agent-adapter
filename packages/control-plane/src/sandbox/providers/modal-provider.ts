@@ -112,9 +112,17 @@ export class ModalSandboxProvider implements SandboxProvider {
         }),
       });
 
+      // Check HTTP status before parsing JSON
+      if (!response.ok) {
+        throw this.classifyErrorWithStatus(
+          `Restore failed with HTTP ${response.status}`,
+          response.status
+        );
+      }
+
       const result = (await response.json()) as {
         success: boolean;
-        data?: { sandbox_id: string };
+        data?: { sandbox_id: string; modal_object_id?: string };
         error?: string;
       };
 
@@ -122,6 +130,7 @@ export class ModalSandboxProvider implements SandboxProvider {
         return {
           success: true,
           sandboxId: result.data?.sandbox_id,
+          providerObjectId: result.data?.modal_object_id,
         };
       }
 
@@ -130,6 +139,9 @@ export class ModalSandboxProvider implements SandboxProvider {
         error: result.error || "Unknown restore error",
       };
     } catch (error) {
+      if (error instanceof SandboxProviderError) {
+        throw error;
+      }
       throw this.classifyError("Failed to restore sandbox from snapshot", error);
     }
   }
@@ -155,6 +167,14 @@ export class ModalSandboxProvider implements SandboxProvider {
         }),
       });
 
+      // Check HTTP status before parsing JSON
+      if (!response.ok) {
+        throw this.classifyErrorWithStatus(
+          `Snapshot failed with HTTP ${response.status}`,
+          response.status
+        );
+      }
+
       const result = (await response.json()) as {
         success: boolean;
         data?: { image_id: string };
@@ -173,8 +193,25 @@ export class ModalSandboxProvider implements SandboxProvider {
         error: result.error || "Unknown snapshot error",
       };
     } catch (error) {
+      if (error instanceof SandboxProviderError) {
+        throw error;
+      }
       throw this.classifyError("Failed to take snapshot", error);
     }
+  }
+
+  /**
+   * Classify an error based on HTTP status code.
+   * Uses status code directly for accurate transient/permanent classification.
+   */
+  private classifyErrorWithStatus(message: string, status: number): SandboxProviderError {
+    // Transient: 502, 503, 504 (gateway/availability issues)
+    if (status === 502 || status === 503 || status === 504) {
+      return new SandboxProviderError(message, "transient");
+    }
+
+    // Permanent: 4xx (client errors) and other 5xx (server errors)
+    return new SandboxProviderError(message, "permanent");
   }
 
   /**

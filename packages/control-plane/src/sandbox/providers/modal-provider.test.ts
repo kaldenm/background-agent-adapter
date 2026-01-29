@@ -445,4 +445,132 @@ describe("ModalSandboxProvider", () => {
       expect(result.createdAt).toBe(1234567890);
     });
   });
+
+  describe("HTTP status handling", () => {
+    it("classifies HTTP 502 from restoreFromSnapshot as transient", async () => {
+      // Mock fetch to return 502
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn(async () => ({
+        ok: false,
+        status: 502,
+        statusText: "Bad Gateway",
+      })) as unknown as typeof fetch;
+
+      const client = createMockModalClient();
+      const provider = new ModalSandboxProvider(client, "test-secret");
+
+      try {
+        await provider.restoreFromSnapshot({
+          snapshotImageId: "img-123",
+          sessionId: "session-123",
+          sandboxId: "sandbox-123",
+          sandboxAuthToken: "token",
+          controlPlaneUrl: "https://test.com",
+          repoOwner: "owner",
+          repoName: "repo",
+          provider: "anthropic",
+          model: "claude-sonnet-4-5",
+        });
+        expect.fail("Should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(SandboxProviderError);
+        expect((e as SandboxProviderError).errorType).toBe("transient");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("classifies HTTP 401 from restoreFromSnapshot as permanent", async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn(async () => ({
+        ok: false,
+        status: 401,
+        statusText: "Unauthorized",
+      })) as unknown as typeof fetch;
+
+      const client = createMockModalClient();
+      const provider = new ModalSandboxProvider(client, "test-secret");
+
+      try {
+        await provider.restoreFromSnapshot({
+          snapshotImageId: "img-123",
+          sessionId: "session-123",
+          sandboxId: "sandbox-123",
+          sandboxAuthToken: "token",
+          controlPlaneUrl: "https://test.com",
+          repoOwner: "owner",
+          repoName: "repo",
+          provider: "anthropic",
+          model: "claude-sonnet-4-5",
+        });
+        expect.fail("Should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(SandboxProviderError);
+        expect((e as SandboxProviderError).errorType).toBe("permanent");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("classifies HTTP 503 from takeSnapshot as transient", async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn(async () => ({
+        ok: false,
+        status: 503,
+        statusText: "Service Unavailable",
+      })) as unknown as typeof fetch;
+
+      const client = createMockModalClient();
+      const provider = new ModalSandboxProvider(client, "test-secret");
+
+      try {
+        await provider.takeSnapshot({
+          providerObjectId: "obj-123",
+          sessionId: "session-123",
+          reason: "test",
+        });
+        expect.fail("Should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(SandboxProviderError);
+        expect((e as SandboxProviderError).errorType).toBe("transient");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("returns providerObjectId from restoreFromSnapshot", async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: {
+            sandbox_id: "restored-sandbox-123",
+            modal_object_id: "new-modal-obj-456",
+          },
+        }),
+      })) as unknown as typeof fetch;
+
+      const client = createMockModalClient();
+      const provider = new ModalSandboxProvider(client, "test-secret");
+
+      const result = await provider.restoreFromSnapshot({
+        snapshotImageId: "img-123",
+        sessionId: "session-123",
+        sandboxId: "sandbox-123",
+        sandboxAuthToken: "token",
+        controlPlaneUrl: "https://test.com",
+        repoOwner: "owner",
+        repoName: "repo",
+        provider: "anthropic",
+        model: "claude-sonnet-4-5",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.sandboxId).toBe("restored-sandbox-123");
+      expect(result.providerObjectId).toBe("new-modal-obj-456");
+
+      globalThis.fetch = originalFetch;
+    });
+  });
 });
