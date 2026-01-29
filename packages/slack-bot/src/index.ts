@@ -614,6 +614,23 @@ async function handleAppMention(
     return;
   }
 
+  // Get thread context if in a thread (include bot messages for better context)
+  // Fetched early so it's available for both existing session prompts and new sessions
+  let previousMessages: string[] | undefined;
+  if (thread_ts) {
+    try {
+      const threadResult = await getThreadMessages(env.SLACK_BOT_TOKEN, channel, thread_ts, 10);
+      if (threadResult.ok && threadResult.messages) {
+        previousMessages = threadResult.messages
+          .filter((m) => m.ts !== ts) // Exclude current message, but include bot messages
+          .map((m) => (m.bot_id ? `[Bot]: ${m.text}` : `[User]: ${m.text}`))
+          .slice(-10);
+      }
+    } catch {
+      // Thread messages not available
+    }
+  }
+
   if (thread_ts) {
     const existingSession = await lookupThreadSession(env, channel, thread_ts);
     if (existingSession) {
@@ -624,10 +641,13 @@ async function handleAppMention(
         model: existingSession.model,
       };
 
+      const threadContext = previousMessages ? formatThreadContext(previousMessages) : "";
+      const promptContent = threadContext + messageText;
+
       const promptResult = await sendPrompt(
         env,
         existingSession.sessionId,
-        messageText,
+        promptContent,
         `slack:${event.user}`,
         callbackContext
       );
@@ -655,22 +675,6 @@ async function handleAppMention(
     }
   } catch {
     // Channel info not available
-  }
-
-  // Get thread context if in a thread (include bot messages for better context)
-  let previousMessages: string[] | undefined;
-  if (thread_ts) {
-    try {
-      const threadResult = await getThreadMessages(env.SLACK_BOT_TOKEN, channel, thread_ts, 10);
-      if (threadResult.ok && threadResult.messages) {
-        previousMessages = threadResult.messages
-          .filter((m) => m.ts !== ts) // Exclude current message, but include bot messages
-          .map((m) => (m.bot_id ? `[Bot]: ${m.text}` : `[User]: ${m.text}`))
-          .slice(-10);
-      }
-    } catch {
-      // Thread messages not available
-    }
   }
 
   // Classify the repository
