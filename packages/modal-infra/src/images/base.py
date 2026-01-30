@@ -23,8 +23,8 @@ SANDBOX_DIR = Path(__file__).parent.parent / "sandbox"
 OPENCODE_VERSION = "latest"
 
 # Cache buster - change this to force Modal image rebuild
-# v33: Fix supervisor unconditionally restarting bridge on graceful exit
-CACHE_BUSTER = "v33-bridge-graceful-shutdown"
+# v34: Replace print() with structured JSON logging in sandbox code
+CACHE_BUSTER = "v34-structured-logging"
 
 # Base image with all development tools
 base_image = (
