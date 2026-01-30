@@ -322,7 +322,8 @@ class SandboxSupervisor:
         # Get session_id from config (required for WebSocket connection)
         session_id = self.session_config.get("session_id", "")
         if not session_id:
-            print("[supervisor] Warning: No session_id in config, bridge may fail to connect")
+            print("[supervisor] No session_id in config, skipping bridge (warm sandbox)")
+            return
 
         # Run bridge as a module (works with relative imports)
         self.bridge_process = await asyncio.create_subprocess_exec(
@@ -348,14 +349,19 @@ class SandboxSupervisor:
         asyncio.create_task(self._forward_bridge_logs())
         print("[supervisor] Bridge process started")
 
-        # Check if bridge crashed immediately during startup
+        # Check if bridge exited immediately during startup
         await asyncio.sleep(0.5)
         if self.bridge_process.returncode is not None:
+            exit_code = self.bridge_process.returncode
             # Bridge exited immediately - read any error output
             stdout, _ = await self.bridge_process.communicate()
-            print(
-                f"[supervisor] Bridge crashed on startup! Exit code: {self.bridge_process.returncode}"
-            )
+            if exit_code == 0:
+                print(
+                    "[supervisor] Bridge exited immediately (exit code: 0), "
+                    "will propagate shutdown on next monitor cycle"
+                )
+            else:
+                print(f"[supervisor] Bridge crashed on startup! Exit code: {exit_code}")
             if stdout:
                 print(f"[supervisor] Bridge output: {stdout.decode()}")
 
@@ -374,6 +380,7 @@ class SandboxSupervisor:
     async def monitor_processes(self) -> None:
         """Monitor child processes and restart on crash."""
         restart_count = 0
+        bridge_restart_count = 0
 
         while not self.shutdown_event.is_set():
             # Check OpenCode process
@@ -404,8 +411,36 @@ class SandboxSupervisor:
             # Check bridge process
             if self.bridge_process and self.bridge_process.returncode is not None:
                 exit_code = self.bridge_process.returncode
-                print(f"[supervisor] Bridge exited (exit code: {exit_code}), restarting...")
-                await self.start_bridge()
+
+                if exit_code == 0:
+                    # Graceful exit: shutdown command, session terminated, or fatal
+                    # connection error. Propagate shutdown rather than restarting.
+                    print(
+                        f"[supervisor] Bridge exited gracefully (exit code: {exit_code}), "
+                        f"propagating shutdown"
+                    )
+                    self.shutdown_event.set()
+                    break
+                else:
+                    # Crash: restart with backoff and retry limit
+                    bridge_restart_count += 1
+                    print(
+                        f"[supervisor] Bridge crashed (exit code: {exit_code}, "
+                        f"restart #{bridge_restart_count})"
+                    )
+
+                    if bridge_restart_count > self.MAX_RESTARTS:
+                        print("[supervisor] Bridge max restarts exceeded, shutting down")
+                        await self._report_fatal_error(
+                            f"Bridge crashed {bridge_restart_count} times, giving up"
+                        )
+                        self.shutdown_event.set()
+                        break
+
+                    delay = min(self.BACKOFF_BASE**bridge_restart_count, self.BACKOFF_MAX)
+                    print(f"[supervisor] Restarting bridge in {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                    await self.start_bridge()
 
             await asyncio.sleep(1.0)
 
