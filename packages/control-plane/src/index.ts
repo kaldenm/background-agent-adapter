@@ -26,11 +26,7 @@ export default {
       return handleWebSocket(request, env, url);
     }
 
-    // Regular API request
-    logger.info("Request received", {
-      method: request.method,
-      path: url.pathname,
-    });
+    // Regular API request — logged by the router with requestId and timing
     return handleRequest(request, env);
   },
 };
@@ -39,8 +35,6 @@ export default {
  * Handle WebSocket connections.
  */
 async function handleWebSocket(request: Request, env: Env, url: URL): Promise<Response> {
-  logger.info("WebSocket upgrade", { path: url.pathname });
-
   // Extract session ID from path: /sessions/:id/ws
   const match = url.pathname.match(/^\/sessions\/([^/]+)\/ws$/);
 
@@ -50,7 +44,7 @@ async function handleWebSocket(request: Request, env: Env, url: URL): Promise<Re
   }
 
   const sessionId = match[1];
-  logger.info("WebSocket upgrade", { sessionId });
+  logger.info("WebSocket upgrade", { path: url.pathname, sessionId });
 
   // Get Durable Object and forward WebSocket
   const doId = env.SESSION.idFromName(sessionId);
