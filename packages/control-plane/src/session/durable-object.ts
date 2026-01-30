@@ -258,8 +258,7 @@ export class SessionDO extends DurableObject<Env> {
       wsManager,
       alarmScheduler,
       idGenerator,
-      config,
-      this.log.child({ subcomponent: "lifecycle-manager" })
+      config
     );
   }
 

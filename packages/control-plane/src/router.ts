@@ -12,14 +12,9 @@ import type {
   RepoMetadata,
 } from "@open-inspect/shared";
 import { getRepoMetadataKey } from "./utils/repo";
-import { createLogger, parseLogLevel } from "./logger";
-import type { Logger } from "./logger";
+import { createLogger } from "./logger";
 
-// Module-level logger for route handlers. Uses default "info" level since env
-// is not available at module scope. This is fine — route handlers don't emit
-// debug-level logs, and Cloudflare Workers Logs indexes the JSON "level" field
-// for filtering at query time regardless.
-const routerLog = createLogger("router");
+const logger = createLogger("router");
 
 /**
  * Route configuration.
@@ -107,8 +102,7 @@ function isSandboxAuthRoute(path: string): boolean {
 async function verifySandboxAuth(
   request: Request,
   env: Env,
-  sessionId: string,
-  log: Logger
+  sessionId: string
 ): Promise<Response | null> {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -131,7 +125,7 @@ async function verifySandboxAuth(
 
   if (!verifyResponse.ok) {
     const clientIP = request.headers.get("CF-Connecting-IP") || "unknown";
-    log.warn("Auth failed: sandbox", {
+    logger.warn("Auth failed: sandbox", {
       path: new URL(request.url).pathname,
       ip: clientIP,
       sessionId,
@@ -154,11 +148,10 @@ async function verifySandboxAuth(
 async function requireInternalAuth(
   request: Request,
   env: Env,
-  path: string,
-  log: Logger
+  path: string
 ): Promise<Response | null> {
   if (!env.INTERNAL_CALLBACK_SECRET) {
-    log.error("INTERNAL_CALLBACK_SECRET not configured - rejecting request");
+    logger.error("INTERNAL_CALLBACK_SECRET not configured - rejecting request");
     return error("Internal authentication not configured", 500);
   }
 
@@ -169,7 +162,7 @@ async function requireInternalAuth(
 
   if (!isValid) {
     const clientIP = request.headers.get("CF-Connecting-IP") || "unknown";
-    log.warn("Auth failed: HMAC", { path, ip: clientIP });
+    logger.warn("Auth failed: HMAC", { path, ip: clientIP });
     return error("Unauthorized", 401);
   }
 
@@ -290,10 +283,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const path = url.pathname;
   const method = request.method;
   const requestId = crypto.randomUUID().slice(0, 8);
-  const log = createLogger("router", { requestId }, parseLogLevel(env.LOG_LEVEL));
   const startTime = Date.now();
 
-  log.info("API request", { method, path });
+  logger.info("API request", { method, path, requestId });
 
   // CORS preflight
   if (method === "OPTIONS") {
@@ -310,7 +302,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   // Require authentication for non-public routes
   if (!isPublicRoute(path)) {
     // First try HMAC auth (for web app, slack bot, etc.)
-    const hmacAuthError = await requireInternalAuth(request, env, path, log);
+    const hmacAuthError = await requireInternalAuth(request, env, path);
 
     if (hmacAuthError) {
       // HMAC auth failed - check if this route accepts sandbox auth
@@ -319,7 +311,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
         const sessionIdMatch = path.match(/^\/sessions\/([^/]+)\//);
         if (sessionIdMatch) {
           const sessionId = sessionIdMatch[1];
-          const sandboxAuthError = await verifySandboxAuth(request, env, sessionId, log);
+          const sandboxAuthError = await verifySandboxAuth(request, env, sessionId);
           if (!sandboxAuthError) {
             // Sandbox auth passed, continue to route handler
           } else {
@@ -357,11 +349,12 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
         // Create new response with CORS headers (original response may be immutable)
         const corsHeaders = new Headers(response.headers);
         corsHeaders.set("Access-Control-Allow-Origin", "*");
-        log.info("API response", {
+        logger.info("API response", {
           method,
           path,
           status: response.status,
           durationMs: Date.now() - startTime,
+          requestId,
         });
         return new Response(response.body, {
           status: response.status,
@@ -369,10 +362,11 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
           headers: corsHeaders,
         });
       } catch (e) {
-        log.error("Request error", {
+        logger.error("Request error", {
           error: e instanceof Error ? e : String(e),
           status: 500,
           path,
+          requestId,
         });
         return error("Internal server error", 500);
       }
@@ -450,7 +444,7 @@ async function handleCreateSession(
     try {
       githubTokenEncrypted = await encryptToken(body.githubToken, env.TOKEN_ENCRYPTION_KEY);
     } catch (e) {
-      routerLog.error("Failed to encrypt GitHub token", {
+      logger.error("Failed to encrypt GitHub token", {
         error: e instanceof Error ? e : String(e),
       });
       return error("Failed to process GitHub token", 500);
@@ -591,7 +585,7 @@ async function handleSessionPrompt(
     })
   );
 
-  routerLog.info("Prompt enqueued via API", { sessionId, status: response.status });
+  logger.info("Prompt enqueued via API", { sessionId, status: response.status });
   return response;
 }
 
@@ -740,7 +734,7 @@ async function handleSessionWsToken(
     try {
       githubTokenEncrypted = await encryptToken(body.githubToken, env.TOKEN_ENCRYPTION_KEY);
     } catch (e) {
-      routerLog.error("Failed to encrypt GitHub token", {
+      logger.error("Failed to encrypt GitHub token", {
         error: e instanceof Error ? e : String(e),
       });
       // Continue without token - PR creation will fail if this user triggers it
@@ -813,7 +807,7 @@ async function handleArchiveSession(
         })
       );
     } else {
-      routerLog.warn("Session not found in KV index during archive", { sessionId });
+      logger.warn("Session not found in KV index during archive", { sessionId });
     }
   }
 
@@ -864,7 +858,7 @@ async function handleUnarchiveSession(
         })
       );
     } else {
-      routerLog.warn("Session not found in KV index during unarchive", { sessionId });
+      logger.warn("Session not found in KV index during unarchive", { sessionId });
     }
   }
 
@@ -904,7 +898,7 @@ async function handleListRepos(
       });
     }
   } catch (e) {
-    routerLog.warn("Failed to read repos cache", { error: e instanceof Error ? e : String(e) });
+    logger.warn("Failed to read repos cache", { error: e instanceof Error ? e : String(e) });
   }
 
   // Get GitHub App config
@@ -918,7 +912,7 @@ async function handleListRepos(
   try {
     repos = await listInstallationRepositories(appConfig);
   } catch (e) {
-    routerLog.error("Failed to list installation repositories", {
+    logger.error("Failed to list installation repositories", {
       error: e instanceof Error ? e : String(e),
     });
     return error("Failed to fetch repositories from GitHub", 500);
@@ -940,7 +934,7 @@ async function handleListRepos(
             // Migrate to new key
             await env.SESSION_INDEX.put(newKey, JSON.stringify(metadata));
             await env.SESSION_INDEX.delete(oldKey);
-            routerLog.info("Migrated repo metadata key", { oldKey, newKey });
+            logger.info("Migrated repo metadata key", { oldKey, newKey });
           }
         }
 
@@ -963,7 +957,7 @@ async function handleListRepos(
       expirationTtl: CACHE_TTL,
     });
   } catch (e) {
-    routerLog.warn("Failed to cache repos list", { error: e instanceof Error ? e : String(e) });
+    logger.warn("Failed to cache repos list", { error: e instanceof Error ? e : String(e) });
   }
 
   return json({
@@ -1019,7 +1013,7 @@ async function handleUpdateRepoMetadata(
       metadata,
     });
   } catch (e) {
-    routerLog.error("Failed to update repo metadata", {
+    logger.error("Failed to update repo metadata", {
       error: e instanceof Error ? e : String(e),
     });
     return error("Failed to update metadata", 500);
@@ -1059,7 +1053,7 @@ async function handleGetRepoMetadata(
       metadata,
     });
   } catch (e) {
-    routerLog.error("Failed to get repo metadata", { error: e instanceof Error ? e : String(e) });
+    logger.error("Failed to get repo metadata", { error: e instanceof Error ? e : String(e) });
     return error("Failed to get metadata", 500);
   }
 }

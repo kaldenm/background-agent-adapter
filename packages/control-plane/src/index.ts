@@ -5,9 +5,10 @@
  */
 
 import { handleRequest } from "./router";
-import { createLogger, parseLogLevel } from "./logger";
-import type { Logger } from "./logger";
+import { createLogger } from "./logger";
 import type { Env } from "./types";
+
+const logger = createLogger("worker");
 
 // Re-export Durable Object for Cloudflare to discover
 export { SessionDO } from "./session/durable-object";
@@ -18,16 +19,15 @@ export { SessionDO } from "./session/durable-object";
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    const log = createLogger("worker", {}, parseLogLevel(env.LOG_LEVEL));
 
     // WebSocket upgrade for session
     const upgradeHeader = request.headers.get("Upgrade");
     if (upgradeHeader?.toLowerCase() === "websocket") {
-      return handleWebSocket(request, env, url, log);
+      return handleWebSocket(request, env, url);
     }
 
     // Regular API request
-    log.info("Request received", {
+    logger.info("Request received", {
       method: request.method,
       path: url.pathname,
     });
@@ -38,24 +38,19 @@ export default {
 /**
  * Handle WebSocket connections.
  */
-async function handleWebSocket(
-  request: Request,
-  env: Env,
-  url: URL,
-  log: Logger
-): Promise<Response> {
-  log.info("WebSocket upgrade", { path: url.pathname });
+async function handleWebSocket(request: Request, env: Env, url: URL): Promise<Response> {
+  logger.info("WebSocket upgrade", { path: url.pathname });
 
   // Extract session ID from path: /sessions/:id/ws
   const match = url.pathname.match(/^\/sessions\/([^/]+)\/ws$/);
 
   if (!match) {
-    log.warn("Invalid WebSocket path", { path: url.pathname });
+    logger.warn("Invalid WebSocket path", { path: url.pathname });
     return new Response("Invalid WebSocket path", { status: 400 });
   }
 
   const sessionId = match[1];
-  log.info("WebSocket upgrade", { sessionId });
+  logger.info("WebSocket upgrade", { sessionId });
 
   // Get Durable Object and forward WebSocket
   const doId = env.SESSION.idFromName(sessionId);

@@ -28,7 +28,9 @@ import {
   type InactivityConfig,
   type HeartbeatConfig,
 } from "./decisions";
-import type { Logger } from "../../logger";
+import { createLogger } from "../../logger";
+
+const log = createLogger("lifecycle-manager");
 
 // ==================== Dependency Interfaces ====================
 
@@ -163,8 +165,7 @@ export class SandboxLifecycleManager {
     private readonly wsManager: WebSocketManager,
     private readonly alarmScheduler: AlarmScheduler,
     private readonly idGenerator: IdGenerator,
-    private readonly config: SandboxLifecycleConfig,
-    private readonly log: Logger
+    private readonly config: SandboxLifecycleConfig
   ) {}
 
   /**
@@ -189,12 +190,12 @@ export class SandboxLifecycleManager {
     const cbDecision = evaluateCircuitBreaker(circuitBreakerState, this.config.circuitBreaker, now);
 
     if (cbDecision.shouldReset) {
-      this.log.info("Circuit breaker reset");
+      log.info("Circuit breaker reset");
       this.storage.resetCircuitBreaker();
     }
 
     if (!cbDecision.shouldProceed) {
-      this.log.warn("Circuit breaker open", {
+      log.warn("Circuit breaker open", {
         failureCount: circuitBreakerState.failureCount,
         waitTimeMs: cbDecision.waitTimeMs || 0,
       });
@@ -222,21 +223,21 @@ export class SandboxLifecycleManager {
 
     switch (spawnDecision.action) {
       case "skip":
-        this.log.info("Spawn decision: skip", {
+        log.info("Spawn decision: skip", {
           reason: spawnDecision.reason,
           sandboxStatus: spawnState.status,
         });
         return;
 
       case "wait":
-        this.log.info("Spawn decision: wait", {
+        log.info("Spawn decision: wait", {
           reason: spawnDecision.reason,
           sandboxStatus: spawnState.status,
         });
         return;
 
       case "restore":
-        this.log.info("Spawn decision: restore", {
+        log.info("Spawn decision: restore", {
           snapshotImageId: spawnDecision.snapshotImageId,
         });
         await this.restoreFromSnapshot(spawnDecision.snapshotImageId);
@@ -257,7 +258,7 @@ export class SandboxLifecycleManager {
     try {
       const session = this.storage.getSession();
       if (!session) {
-        this.log.error("Cannot spawn sandbox: no session");
+        log.error("Cannot spawn sandbox: no session");
         return;
       }
 
@@ -275,7 +276,7 @@ export class SandboxLifecycleManager {
       });
       this.broadcaster.broadcast({ type: "sandbox_status", status: "spawning" });
 
-      this.log.info("Spawning sandbox", {
+      log.info("Spawning sandbox", {
         expectedSandboxId,
         repoOwner: session.repo_owner,
         repoName: session.repo_name,
@@ -295,7 +296,7 @@ export class SandboxLifecycleManager {
 
       const result = await this.provider.createSandbox(createConfig);
 
-      this.log.info("Sandbox spawned", {
+      log.info("Sandbox spawned", {
         sandboxId: result.sandboxId,
         providerObjectId: result.providerObjectId,
       });
@@ -311,7 +312,7 @@ export class SandboxLifecycleManager {
       // Reset circuit breaker on successful spawn initiation
       this.storage.resetCircuitBreaker();
     } catch (error) {
-      this.log.error("Sandbox spawn failed", {
+      log.error("Sandbox spawn failed", {
         error: error instanceof Error ? error : String(error),
       });
 
@@ -319,16 +320,16 @@ export class SandboxLifecycleManager {
       if (error instanceof SandboxProviderError) {
         if (error.errorType === "permanent") {
           this.storage.incrementCircuitBreakerFailure(Date.now());
-          this.log.info("Circuit breaker incremented", { errorType: "permanent" });
+          log.info("Circuit breaker incremented", { errorType: "permanent" });
         } else {
-          this.log.info("Transient error, not incrementing circuit breaker", {
+          log.info("Transient error, not incrementing circuit breaker", {
             errorType: error.errorType,
           });
         }
       } else {
         // Unknown error type - treat as permanent
         this.storage.incrementCircuitBreakerFailure(Date.now());
-        this.log.info("Circuit breaker incremented", { errorType: "unknown" });
+        log.info("Circuit breaker incremented", { errorType: "unknown" });
       }
 
       this.storage.updateSandboxStatus("failed");
@@ -346,7 +347,7 @@ export class SandboxLifecycleManager {
    */
   private async restoreFromSnapshot(snapshotImageId: string): Promise<void> {
     if (!this.provider.restoreFromSnapshot) {
-      this.log.info("Provider does not support restore, falling back to fresh spawn");
+      log.info("Provider does not support restore, falling back to fresh spawn");
       // Fall back to fresh spawn
       await this.doSpawn();
       return;
@@ -357,7 +358,7 @@ export class SandboxLifecycleManager {
     try {
       const session = this.storage.getSession();
       if (!session) {
-        this.log.error("Cannot restore: no session");
+        log.error("Cannot restore: no session");
         return;
       }
 
@@ -376,7 +377,7 @@ export class SandboxLifecycleManager {
         modalSandboxId: expectedSandboxId,
       });
 
-      this.log.info("Restoring from snapshot", { snapshotImageId });
+      log.info("Restoring from snapshot", { snapshotImageId });
 
       const result = await this.provider.restoreFromSnapshot({
         snapshotImageId,
@@ -391,7 +392,7 @@ export class SandboxLifecycleManager {
       });
 
       if (result.success) {
-        this.log.info("Sandbox restored", {
+        log.info("Sandbox restored", {
           sandboxId: result.sandboxId,
           providerObjectId: result.providerObjectId,
         });
@@ -408,7 +409,7 @@ export class SandboxLifecycleManager {
           message: "Session restored from snapshot",
         });
       } else {
-        this.log.error("Snapshot restore failed", { error: result.error, snapshotImageId });
+        log.error("Snapshot restore failed", { error: result.error, snapshotImageId });
         this.storage.updateSandboxStatus("failed");
         this.broadcaster.broadcast({
           type: "sandbox_error",
@@ -416,7 +417,7 @@ export class SandboxLifecycleManager {
         });
       }
     } catch (error) {
-      this.log.error("Snapshot restore request failed", {
+      log.error("Snapshot restore request failed", {
         error: error instanceof Error ? error : String(error),
         snapshotImageId,
       });
@@ -435,7 +436,7 @@ export class SandboxLifecycleManager {
    */
   async triggerSnapshot(reason: string): Promise<void> {
     if (!this.provider.takeSnapshot) {
-      this.log.debug("Provider does not support snapshots");
+      log.debug("Provider does not support snapshots");
       return;
     }
 
@@ -443,13 +444,13 @@ export class SandboxLifecycleManager {
     const session = this.storage.getSession();
 
     if (!sandbox?.modal_object_id || !session) {
-      this.log.debug("Cannot snapshot: no modal_object_id or session");
+      log.debug("Cannot snapshot: no modal_object_id or session");
       return;
     }
 
     // Don't snapshot if already snapshotting
     if (sandbox.status === "snapshotting") {
-      this.log.debug("Already snapshotting, skipping");
+      log.debug("Already snapshotting, skipping");
       return;
     }
 
@@ -464,7 +465,7 @@ export class SandboxLifecycleManager {
     }
 
     try {
-      this.log.info("Taking snapshot", { reason, modalObjectId: sandbox.modal_object_id });
+      log.info("Taking snapshot", { reason, modalObjectId: sandbox.modal_object_id });
 
       const result = await this.provider.takeSnapshot({
         providerObjectId: sandbox.modal_object_id,
@@ -474,17 +475,17 @@ export class SandboxLifecycleManager {
 
       if (result.success && result.imageId) {
         this.storage.updateSandboxSnapshotImageId(sandbox.id, result.imageId);
-        this.log.info("Snapshot saved", { imageId: result.imageId, reason });
+        log.info("Snapshot saved", { imageId: result.imageId, reason });
         this.broadcaster.broadcast({
           type: "snapshot_saved",
           imageId: result.imageId,
           reason,
         });
       } else {
-        this.log.error("Snapshot failed", { error: result.error, reason });
+        log.error("Snapshot failed", { error: result.error, reason });
       }
     } catch (error) {
-      this.log.error("Snapshot request failed", {
+      log.error("Snapshot request failed", {
         error: error instanceof Error ? error : String(error),
         reason,
       });
@@ -503,13 +504,13 @@ export class SandboxLifecycleManager {
   async handleAlarm(): Promise<void> {
     const sandbox = this.storage.getSandbox();
     if (!sandbox) {
-      this.log.debug("Alarm fired: no sandbox found");
+      log.debug("Alarm fired: no sandbox found");
       return;
     }
 
     const now = Date.now();
 
-    this.log.debug("Alarm fired", {
+    log.debug("Alarm fired", {
       sandboxStatus: sandbox.status,
       lastActivity: sandbox.last_activity,
       lastHeartbeat: sandbox.last_heartbeat,
@@ -517,7 +518,7 @@ export class SandboxLifecycleManager {
 
     // Skip if sandbox is already in terminal state
     if (sandbox.status === "stopped" || sandbox.status === "failed" || sandbox.status === "stale") {
-      this.log.debug("Alarm: sandbox in terminal state, skipping", {
+      log.debug("Alarm: sandbox in terminal state, skipping", {
         sandboxStatus: sandbox.status,
       });
       return;
@@ -531,13 +532,13 @@ export class SandboxLifecycleManager {
     );
 
     if (heartbeatHealth.isStale) {
-      this.log.warn("Heartbeat stale", {
+      log.warn("Heartbeat stale", {
         lastHeartbeatMs: heartbeatHealth.ageMs || 0,
         thresholdMs: this.config.heartbeat.timeoutMs,
       });
       // Fire-and-forget snapshot so status broadcast isn't delayed
       this.triggerSnapshot("heartbeat_timeout").catch((e) =>
-        this.log.error("Heartbeat snapshot failed", { error: e instanceof Error ? e : String(e) })
+        log.error("Heartbeat snapshot failed", { error: e instanceof Error ? e : String(e) })
       );
       this.storage.updateSandboxStatus("stale");
       this.broadcaster.broadcast({ type: "sandbox_status", status: "stale" });
@@ -560,7 +561,7 @@ export class SandboxLifecycleManager {
 
     switch (inactivityDecision.action) {
       case "timeout":
-        this.log.info("Inactivity timeout", {
+        log.info("Inactivity timeout", {
           lastActivity: sandbox.last_activity,
           timeoutMs: this.config.inactivity.timeoutMs,
         });
@@ -582,7 +583,7 @@ export class SandboxLifecycleManager {
         return;
 
       case "extend":
-        this.log.info("Inactivity extended", {
+        log.info("Inactivity extended", {
           connectedClients,
           extensionMs: inactivityDecision.extensionMs,
         });
@@ -597,7 +598,7 @@ export class SandboxLifecycleManager {
         return;
 
       case "schedule":
-        this.log.debug("Scheduling next alarm", { nextCheckMs: inactivityDecision.nextCheckMs });
+        log.debug("Scheduling next alarm", { nextCheckMs: inactivityDecision.nextCheckMs });
         await this.alarmScheduler.scheduleAlarm(now + inactivityDecision.nextCheckMs);
         return;
     }
@@ -618,11 +619,11 @@ export class SandboxLifecycleManager {
     const warmDecision = evaluateWarmDecision(warmState);
 
     if (warmDecision.action === "skip") {
-      this.log.debug("Warm skipped", { reason: warmDecision.reason });
+      log.debug("Warm skipped", { reason: warmDecision.reason });
       return;
     }
 
-    this.log.info("Warming sandbox");
+    log.info("Warming sandbox");
     this.broadcaster.broadcast({ type: "sandbox_warming" });
     await this.spawnSandbox();
   }
@@ -639,7 +640,7 @@ export class SandboxLifecycleManager {
    */
   async scheduleInactivityCheck(): Promise<void> {
     const alarmTime = Date.now() + this.config.inactivity.timeoutMs;
-    this.log.debug("Scheduling inactivity check", { timeoutMs: this.config.inactivity.timeoutMs });
+    log.debug("Scheduling inactivity check", { timeoutMs: this.config.inactivity.timeoutMs });
     await this.alarmScheduler.scheduleAlarm(alarmTime);
   }
 
