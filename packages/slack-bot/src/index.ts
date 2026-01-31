@@ -358,6 +358,19 @@ function formatThreadContext(previousMessages: string[]): string {
 }
 
 /**
+ * Format channel context for inclusion in a prompt.
+ * Returns a formatted string with the channel name and optional description.
+ */
+function formatChannelContext(channelName: string, channelDescription?: string): string {
+  let context = `Slack channel context:\n---\nChannel: #${channelName}`;
+  if (channelDescription) {
+    context += `\nDescription: ${channelDescription}`;
+  }
+  context += "\n---\n\n";
+  return context;
+}
+
+/**
  * Create a session and send the initial prompt.
  * Shared logic between handleAppMention and handleRepoSelection.
  *
@@ -370,7 +383,9 @@ async function startSessionAndSendPrompt(
   threadTs: string,
   messageText: string,
   userId: string,
-  previousMessages?: string[]
+  previousMessages?: string[],
+  channelName?: string,
+  channelDescription?: string
 ): Promise<{ sessionId: string } | null> {
   // Fetch user's preferred model and validate it
   const userPrefs = await getUserPreferences(env, userId);
@@ -405,9 +420,10 @@ async function startSessionAndSendPrompt(
     model,
   };
 
-  // Build prompt content with thread context if available
+  // Build prompt content with channel and thread context if available
+  const channelContext = channelName ? formatChannelContext(channelName, channelDescription) : "";
   const threadContext = previousMessages ? formatThreadContext(previousMessages) : "";
-  const promptContent = threadContext + messageText;
+  const promptContent = channelContext + threadContext + messageText;
 
   // Send the prompt to the session
   const promptResult = await sendPrompt(
@@ -631,6 +647,20 @@ async function handleAppMention(
     }
   }
 
+  // Get channel context (fetched early so it's available for all paths)
+  let channelName: string | undefined;
+  let channelDescription: string | undefined;
+
+  try {
+    const channelInfo = await getChannelInfo(env.SLACK_BOT_TOKEN, channel);
+    if (channelInfo.ok && channelInfo.channel) {
+      channelName = channelInfo.channel.name;
+      channelDescription = channelInfo.channel.topic?.value || channelInfo.channel.purpose?.value;
+    }
+  } catch {
+    // Channel info not available
+  }
+
   if (thread_ts) {
     const existingSession = await lookupThreadSession(env, channel, thread_ts);
     if (existingSession) {
@@ -641,8 +671,11 @@ async function handleAppMention(
         model: existingSession.model,
       };
 
+      const channelContext = channelName
+        ? formatChannelContext(channelName, channelDescription)
+        : "";
       const threadContext = previousMessages ? formatThreadContext(previousMessages) : "";
-      const promptContent = threadContext + messageText;
+      const promptContent = channelContext + threadContext + messageText;
 
       const promptResult = await sendPrompt(
         env,
@@ -661,20 +694,6 @@ async function handleAppMention(
       );
       await clearThreadSession(env, channel, thread_ts);
     }
-  }
-
-  // Get channel context
-  let channelName: string | undefined;
-  let channelDescription: string | undefined;
-
-  try {
-    const channelInfo = await getChannelInfo(env.SLACK_BOT_TOKEN, channel);
-    if (channelInfo.ok && channelInfo.channel) {
-      channelName = channelInfo.channel.name;
-      channelDescription = channelInfo.channel.topic?.value || channelInfo.channel.purpose?.value;
-    }
-  } catch {
-    // Channel info not available
   }
 
   // Classify the repository
@@ -706,7 +725,13 @@ async function handleAppMention(
     const pendingKey = `pending:${channel}:${thread_ts || ts}`;
     await env.SLACK_KV.put(
       pendingKey,
-      JSON.stringify({ message: messageText, userId: event.user, previousMessages }),
+      JSON.stringify({
+        message: messageText,
+        userId: event.user,
+        previousMessages,
+        channelName,
+        channelDescription,
+      }),
       { expirationTtl: 3600 } // Expire after 1 hour
     );
 
@@ -792,7 +817,9 @@ async function handleAppMention(
     threadKey,
     messageText,
     event.user,
-    previousMessages
+    previousMessages,
+    channelName,
+    channelDescription
   );
 
   if (!sessionResult) {
@@ -860,10 +887,14 @@ async function handleRepoSelection(
     message: messageText,
     userId,
     previousMessages,
+    channelName,
+    channelDescription,
   } = pendingData as {
     message: string;
     userId: string;
     previousMessages?: string[];
+    channelName?: string;
+    channelDescription?: string;
   };
 
   // Find the repo config
@@ -895,7 +926,9 @@ async function handleRepoSelection(
     threadKey,
     messageText,
     userId,
-    previousMessages
+    previousMessages,
+    channelName,
+    channelDescription
   );
 
   if (!sessionResult) {
