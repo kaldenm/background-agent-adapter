@@ -174,5 +174,5 @@ built with:
 
 - [Modal](https://modal.com) - Cloud sandbox infrastructure
 - [Cloudflare Workers](https://workers.cloudflare.com) - Edge computing
-- [OpenCode](https://opencode.dev) - Coding agent runtime
+- [OpenCode](https://opencode.ai) - Coding agent runtime
 - [Next.js](https://nextjs.org) - Web framework
