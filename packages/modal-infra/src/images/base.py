@@ -86,7 +86,9 @@ base_image = (
         "PyJWT[crypto]",  # For GitHub App token generation (includes cryptography)
     )
     # Install OpenCode CLI and plugin for custom tools
+    # CACHE_BUSTER is embedded in a no-op echo so Modal invalidates this layer on bump.
     .run_commands(
+        f"echo 'cache: {CACHE_BUSTER}' > /dev/null",
         "npm install -g opencode-ai@latest",
         "opencode --version || echo 'OpenCode installed'",
         # Install @opencode-ai/plugin globally for custom tools
