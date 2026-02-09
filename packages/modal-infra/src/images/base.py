@@ -23,8 +23,8 @@ SANDBOX_DIR = Path(__file__).parent.parent / "sandbox"
 OPENCODE_VERSION = "latest"
 
 # Cache buster - change this to force Modal image rebuild
-# v35: Add jq to base image
-CACHE_BUSTER = "v35-add-jq"
+# v36: OpenAI OAuth auth.json support in entrypoint
+CACHE_BUSTER = "v36-openai-oauth-authjson"
 
 # Base image with all development tools
 base_image = (
