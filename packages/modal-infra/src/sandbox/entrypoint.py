@@ -221,8 +221,46 @@ class SandboxSupervisor:
             self.git_sync_complete.set()  # Allow agent to proceed anyway
             return False
 
+    def _setup_openai_oauth(self) -> None:
+        """Write OpenCode auth.json for ChatGPT OAuth if refresh token is configured."""
+        refresh_token = os.environ.get("OPENAI_OAUTH_REFRESH_TOKEN")
+        if not refresh_token:
+            return
+
+        try:
+            auth_dir = Path.home() / ".local" / "share" / "opencode"
+            auth_dir.mkdir(parents=True, exist_ok=True)
+
+            openai_entry = {
+                "type": "oauth",
+                "refresh": refresh_token,
+                "access": "",
+                "expires": 0,
+            }
+
+            account_id = os.environ.get("OPENAI_OAUTH_ACCOUNT_ID")
+            if account_id:
+                openai_entry["accountId"] = account_id
+
+            auth_file = auth_dir / "auth.json"
+            tmp_file = auth_dir / ".auth.json.tmp"
+
+            # Write to a temp file created with 0o600 from the start, then
+            # atomically rename so the target is never world-readable.
+            fd = os.open(str(tmp_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.write(fd, json.dumps({"openai": openai_entry}).encode())
+            finally:
+                os.close(fd)
+            tmp_file.replace(auth_file)
+
+            self.log.info("openai_oauth.setup")
+        except Exception as e:
+            self.log.warn("openai_oauth.setup_error", exc=e)
+
     async def start_opencode(self) -> None:
         """Start OpenCode server with configuration."""
+        self._setup_openai_oauth()
         self.log.info("opencode.start")
 
         # Build OpenCode config from session settings
