@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useSidebarContext } from "@/components/sidebar-layout";
 import { SidebarToggleIcon } from "@/components/sidebar-toggle-icon";
 import { formatModelNameLower } from "@/lib/format";
+import { SHORTCUT_LABELS } from "@/lib/keyboard-shortcuts";
 import {
   DEFAULT_MODEL,
   getDefaultReasoningEffort,
@@ -342,6 +343,8 @@ function HomeContent({
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return;
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -360,7 +363,8 @@ function HomeContent({
             <button
               onClick={toggle}
               className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition"
-              title="Open sidebar"
+              title={`Open sidebar (${SHORTCUT_LABELS.TOGGLE_SIDEBAR})`}
+              aria-label={`Open sidebar (${SHORTCUT_LABELS.TOGGLE_SIDEBAR})`}
             >
               <SidebarToggleIcon />
             </button>
@@ -413,7 +417,8 @@ function HomeContent({
                       type="submit"
                       disabled={!prompt.trim() || creating || !selectedRepo}
                       className="p-2 text-secondary-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition"
-                      title="Send"
+                      title={`Send (${SHORTCUT_LABELS.SEND_PROMPT})`}
+                      aria-label={`Send (${SHORTCUT_LABELS.SEND_PROMPT})`}
                     >
                       {creating ? (
                         <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />

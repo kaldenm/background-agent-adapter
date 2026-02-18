@@ -20,6 +20,7 @@ import { SidebarToggleIcon } from "@/components/sidebar-toggle-icon";
 import { SessionRightSidebar } from "@/components/session-right-sidebar";
 import { ActionBar } from "@/components/action-bar";
 import { copyToClipboard, formatModelNameLower } from "@/lib/format";
+import { SHORTCUT_LABELS } from "@/lib/keyboard-shortcuts";
 import {
   DEFAULT_MODEL,
   getDefaultReasoningEffort,
@@ -244,6 +245,8 @@ function SessionPageContent() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return;
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -489,7 +492,8 @@ function SessionContent({
               <button
                 onClick={toggle}
                 className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition"
-                title="Open sidebar"
+                title={`Open sidebar (${SHORTCUT_LABELS.TOGGLE_SIDEBAR})`}
+                aria-label={`Open sidebar (${SHORTCUT_LABELS.TOGGLE_SIDEBAR})`}
               >
                 <SidebarToggleIcon />
               </button>
@@ -623,7 +627,16 @@ function SessionContent({
                   type="submit"
                   disabled={!prompt.trim() || isProcessing}
                   className="p-2 text-secondary-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition"
-                  title={isProcessing && prompt.trim() ? "Wait for execution to complete" : "Send"}
+                  title={
+                    isProcessing && prompt.trim()
+                      ? "Wait for execution to complete"
+                      : `Send (${SHORTCUT_LABELS.SEND_PROMPT})`
+                  }
+                  aria-label={
+                    isProcessing && prompt.trim()
+                      ? "Wait for execution to complete"
+                      : `Send (${SHORTCUT_LABELS.SEND_PROMPT})`
+                  }
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
