@@ -25,6 +25,10 @@ import {
   type IdGenerator,
 } from "../sandbox/lifecycle/manager";
 import {
+  evaluateExecutionTimeout,
+  DEFAULT_EXECUTION_TIMEOUT_MS,
+} from "../sandbox/lifecycle/decisions";
+import {
   createSourceControlProvider as createSourceControlProviderImpl,
   resolveScmProviderFromEnv,
   type SourceControlProvider,
@@ -270,6 +274,10 @@ export class SessionDO extends DurableObject<Env> {
     return this._wsManager;
   }
 
+  private get executionTimeoutMs(): number {
+    return parseInt(this.env.EXECUTION_TIMEOUT_MS || String(DEFAULT_EXECUTION_TIMEOUT_MS), 10);
+  }
+
   private get messageQueue(): SessionMessageQueue {
     if (!this._messageQueue) {
       this._messageQueue = new SessionMessageQueue({
@@ -286,6 +294,13 @@ export class SessionDO extends DurableObject<Env> {
         updateLastActivity: (timestamp) => this.updateLastActivity(timestamp),
         spawnSandbox: () => this.spawnSandbox(),
         broadcast: (message) => this.broadcast(message),
+        scheduleExecutionTimeout: async (startedAtMs: number) => {
+          const deadline = startedAtMs + this.executionTimeoutMs;
+          const currentAlarm = await this.ctx.storage.getAlarm();
+          if (!currentAlarm || deadline < currentAlarm) {
+            await this.ctx.storage.setAlarm(deadline);
+          }
+        },
       });
     }
 
@@ -438,7 +453,10 @@ export class SessionDO extends DurableObject<Env> {
       wsManager,
       alarmScheduler,
       idGenerator,
-      config
+      config,
+      {
+        onSandboxTerminating: () => this.messageQueue.failStuckProcessingMessage(),
+      }
     );
   }
 
@@ -706,10 +724,37 @@ export class SessionDO extends DurableObject<Env> {
   /**
    * Durable Object alarm handler.
    *
-   * Delegates to the lifecycle manager for inactivity and heartbeat monitoring.
+   * Checks for stuck processing messages (defense-in-depth execution timeout)
+   * BEFORE delegating to the lifecycle manager for inactivity and heartbeat
+   * monitoring. This ensures stuck messages are failed even when the sandbox
+   * is already dead and handleAlarm() returns early.
    */
   async alarm(): Promise<void> {
     this.ensureInitialized();
+
+    // Execution timeout check: if a message has been in 'processing' longer than
+    // the configured timeout, fail it. This is idempotent — if the message was
+    // already failed (by onSandboxTerminating or a prior alarm), getProcessingMessageWithStartedAt()
+    // returns null and we skip straight to handleAlarm().
+    const processing = this.repository.getProcessingMessageWithStartedAt();
+    if (processing?.started_at) {
+      const now = Date.now();
+      const result = evaluateExecutionTimeout(
+        processing.started_at,
+        { timeoutMs: this.executionTimeoutMs },
+        now
+      );
+      if (result.isTimedOut) {
+        this.log.warn("Execution timeout: message stuck in processing", {
+          event: "execution.timeout",
+          message_id: processing.id,
+          elapsed_ms: result.elapsedMs,
+          timeout_ms: this.executionTimeoutMs,
+        });
+        await this.messageQueue.failStuckProcessingMessage();
+      }
+    }
+
     await this.lifecycleManager.handleAlarm();
   }
 
