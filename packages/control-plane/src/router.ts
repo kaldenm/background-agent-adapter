@@ -25,6 +25,7 @@ import {
   parsePattern,
   json,
   error,
+  createRouteSourceControlProvider,
   resolveInstalledRepo,
 } from "./routes/shared";
 import { integrationSettingsRoutes } from "./routes/integration-settings";
@@ -554,7 +555,8 @@ async function handleCreateSession(
 
   let repoId: number;
   try {
-    const resolved = await resolveInstalledRepo(env, repoOwner, repoName);
+    const provider = createRouteSourceControlProvider(env);
+    const resolved = await resolveInstalledRepo(provider, repoOwner, repoName);
     if (!resolved) {
       return error("Repository is not installed for the GitHub App", 404);
     }
@@ -566,10 +568,9 @@ async function handleCreateSession(
       repo_owner: repoOwner,
       repo_name: repoName,
     });
-    return error(
-      message === "GitHub App not configured" ? message : "Failed to resolve repository",
-      500
-    );
+    const isConfigError =
+      e instanceof SourceControlProviderError && e.errorType === "permanent" && !e.httpStatus;
+    return error(isConfigError ? message : "Failed to resolve repository", 500);
   }
 
   // User info from direct params
