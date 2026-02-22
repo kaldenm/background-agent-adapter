@@ -63,15 +63,15 @@ describe("applyMigrations", () => {
     const inserts = mock.calls.filter((c) =>
       c.query.includes("INSERT OR IGNORE INTO _schema_migrations")
     );
-    expect(inserts).toHaveLength(19);
+    expect(inserts).toHaveLength(22);
 
-    // Verify all 19 IDs are recorded
+    // Verify all 22 IDs are recorded
     const recordedIds = inserts.map((c) => c.params[0]);
     expect(recordedIds).toEqual(MIGRATIONS.map((m) => m.id));
   });
 
   it("skips all migrations when fully migrated", () => {
-    // All 19 IDs already applied
+    // All 22 IDs already applied
     const appliedRows = MIGRATIONS.map((m) => ({ id: m.id }));
     mock.setData("SELECT id FROM _schema_migrations", appliedRows);
 
@@ -97,10 +97,10 @@ describe("applyMigrations", () => {
     const inserts = mock.calls.filter((c) =>
       c.query.includes("INSERT OR IGNORE INTO _schema_migrations")
     );
-    expect(inserts).toHaveLength(9); // migrations 11-19
+    expect(inserts).toHaveLength(12); // migrations 11-22
 
     const recordedIds = inserts.map((c) => c.params[0]);
-    expect(recordedIds).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19]);
+    expect(recordedIds).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]);
   });
 
   it("rethrows non-duplicate-column errors from string migrations", () => {
@@ -117,6 +117,17 @@ describe("applyMigrations", () => {
   });
 
   it("swallows duplicate column errors from string migrations", () => {
+    // Seed PRAGMA data so function-based migrations (7, 20) skip their ALTER TABLE calls.
+    // This isolates the test to only exercise string migration error handling via runMigration().
+    mock.setData("PRAGMA table_info(participants)", [
+      { name: "scm_refresh_token_encrypted" },
+      { name: "scm_user_id" },
+      { name: "scm_login" },
+      { name: "scm_email" },
+      { name: "scm_name" },
+      { name: "scm_access_token_encrypted" },
+      { name: "scm_token_expires_at" },
+    ]);
     const originalExec = mock.sql.exec.bind(mock.sql);
     mock.sql.exec = (query: string, ...params: unknown[]): SqlResult => {
       if (query.includes("ALTER TABLE")) {
@@ -128,11 +139,11 @@ describe("applyMigrations", () => {
     // Should not throw — duplicate column errors are expected
     expect(() => applyMigrations(mock.sql)).not.toThrow();
 
-    // All 19 migrations should still be recorded
+    // All 22 migrations should still be recorded
     const inserts = mock.calls.filter((c) =>
       c.query.includes("INSERT OR IGNORE INTO _schema_migrations")
     );
-    expect(inserts).toHaveLength(19);
+    expect(inserts).toHaveLength(22);
   });
 
   it("is idempotent — calling twice produces no duplicate rows", () => {
