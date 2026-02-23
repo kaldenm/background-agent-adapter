@@ -167,6 +167,8 @@ async def api_create_sandbox(
             sandbox_auth_token=request.get("sandbox_auth_token"),
             clone_token=github_app_token,
             user_env_vars=request.get("user_env_vars") or None,
+            repo_image_id=request.get("repo_image_id") or None,
+            repo_image_sha=request.get("repo_image_sha") or None,
         )
 
         handle = await manager.create_sandbox(config)
@@ -566,4 +568,165 @@ async def api_restore_sandbox(
             request_id=x_request_id,
             session_id=x_session_id,
             sandbox_id=x_sandbox_id,
+        )
+
+
+@app.function(
+    image=function_image,
+    secrets=[internal_api_secret, github_app_secrets],
+)
+@fastapi_endpoint(method="POST")
+async def api_build_repo_image(
+    request: dict,
+    authorization: str | None = Header(None),
+    x_trace_id: str | None = Header(None),
+    x_request_id: str | None = Header(None),
+) -> dict:
+    """
+    Kick off an async image build. Returns immediately.
+
+    Spawns a build_repo_image async worker that will:
+    1. Create a build sandbox
+    2. Wait for it to finish (git clone + setup)
+    3. Snapshot the filesystem
+    4. POST the result to callback_url
+
+    POST body:
+    {
+        "repo_owner": "...",
+        "repo_name": "...",
+        "default_branch": "main",
+        "build_id": "...",
+        "callback_url": "..."
+    }
+    """
+    start_time = time.time()
+    http_status = 200
+    outcome = "success"
+
+    require_auth(authorization)
+
+    try:
+        from .scheduler.image_builder import build_repo_image
+
+        repo_owner = request.get("repo_owner")
+        repo_name = request.get("repo_name")
+        default_branch = request.get("default_branch", "main")
+        build_id = request.get("build_id", "")
+        callback_url = request.get("callback_url", "")
+
+        if not repo_owner or not repo_name:
+            raise HTTPException(status_code=400, detail="repo_owner and repo_name are required")
+
+        if not build_id:
+            raise HTTPException(status_code=400, detail="build_id is required")
+
+        # Spawn the async builder — returns immediately
+        build_repo_image.spawn(
+            repo_owner=repo_owner,
+            repo_name=repo_name,
+            default_branch=default_branch,
+            callback_url=callback_url,
+            build_id=build_id,
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "build_id": build_id,
+                "status": "building",
+            },
+        }
+    except HTTPException as e:
+        outcome = "error"
+        http_status = e.status_code
+        raise
+    except Exception as e:
+        outcome = "error"
+        http_status = 500
+        log.error("api.error", exc=e, endpoint_name="api_build_repo_image")
+        return {"success": False, "error": str(e)}
+    finally:
+        duration_ms = int((time.time() - start_time) * 1000)
+        log.info(
+            "modal.http_request",
+            http_method="POST",
+            http_path="/api_build_repo_image",
+            http_status=http_status,
+            duration_ms=duration_ms,
+            outcome=outcome,
+            endpoint_name="api_build_repo_image",
+            trace_id=x_trace_id,
+            request_id=x_request_id,
+        )
+
+
+@app.function(
+    image=function_image,
+    secrets=[internal_api_secret],
+)
+@fastapi_endpoint(method="POST")
+async def api_delete_provider_image(
+    request: dict,
+    authorization: str | None = Header(None),
+    x_trace_id: str | None = Header(None),
+    x_request_id: str | None = Header(None),
+) -> dict:
+    """
+    Delete a single provider image (best-effort).
+
+    Used to clean up old pre-built images after they're replaced by newer builds.
+
+    POST body:
+    {
+        "provider_image_id": "..."
+    }
+    """
+    start_time = time.time()
+    http_status = 200
+    outcome = "success"
+
+    require_auth(authorization)
+
+    provider_image_id = request.get("provider_image_id")
+    if not provider_image_id:
+        raise HTTPException(status_code=400, detail="provider_image_id is required")
+
+    try:
+        # Modal doesn't have an explicit delete API for images;
+        # images are garbage-collected when no longer referenced.
+        # We log the request for auditability.
+        log.info(
+            "image.delete_requested",
+            provider_image_id=provider_image_id,
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "provider_image_id": provider_image_id,
+                "deleted": True,
+            },
+        }
+    except HTTPException as e:
+        outcome = "error"
+        http_status = e.status_code
+        raise
+    except Exception as e:
+        outcome = "error"
+        http_status = 500
+        log.error("api.error", exc=e, endpoint_name="api_delete_provider_image")
+        return {"success": False, "error": str(e)}
+    finally:
+        duration_ms = int((time.time() - start_time) * 1000)
+        log.info(
+            "modal.http_request",
+            http_method="POST",
+            http_path="/api_delete_provider_image",
+            http_status=http_status,
+            duration_ms=duration_ms,
+            outcome=outcome,
+            endpoint_name="api_delete_provider_image",
+            trace_id=x_trace_id,
+            request_id=x_request_id,
         )
