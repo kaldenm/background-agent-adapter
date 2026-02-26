@@ -3,7 +3,7 @@
  */
 
 // Session states
-export type SessionStatus = "created" | "active" | "completed" | "archived";
+export type SessionStatus = "created" | "active" | "completed" | "archived" | "cancelled";
 export type SandboxStatus =
   | "pending"
   | "warming"
@@ -40,6 +40,9 @@ export interface Session {
   currentSha: string | null;
   opencodeSessionId: string | null;
   status: SessionStatus;
+  parentSessionId: string | null;
+  spawnSource: "user" | "agent";
+  spawnDepth: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -171,6 +174,7 @@ export type ServerMessage =
   | { type: "presence_leave"; userId: string }
   | { type: "sandbox_warming" }
   | { type: "sandbox_ready" }
+  | { type: "session_status"; status: SessionStatus }
   | { type: "error"; code: string; message: string };
 
 // Session state sent to clients
@@ -187,6 +191,7 @@ export interface SessionState {
   model?: string;
   reasoningEffort?: string;
   isProcessing?: boolean;
+  parentSessionId?: string | null;
 }
 
 // Participant presence info
@@ -266,6 +271,54 @@ export interface ListSessionsResponse {
   sessions: Session[];
   cursor?: string;
   hasMore: boolean;
+}
+
+// --- Agent-spawned sub-sessions ---
+
+/** Request body for POST /sessions/:parentId/children */
+export interface SpawnChildSessionRequest {
+  title: string;
+  prompt: string;
+  repoOwner?: string;
+  repoName?: string;
+  model?: string;
+  reasoningEffort?: string;
+}
+
+/** Returned by parent DO's GET /internal/spawn-context */
+export interface SpawnContext {
+  repoOwner: string;
+  repoName: string;
+  repoId: number | null;
+  model: string;
+  reasoningEffort: string | null;
+  owner: {
+    userId: string;
+    scmLogin: string | null;
+    scmName: string | null;
+    scmEmail: string | null;
+    scmAccessTokenEncrypted: string | null;
+    scmRefreshTokenEncrypted: string | null;
+    scmTokenExpiresAt: number | null;
+  };
+}
+
+/** Returned by child DO's GET /internal/child-summary */
+export interface ChildSessionDetail {
+  session: {
+    id: string;
+    title: string;
+    status: SessionStatus;
+    repoOwner: string;
+    repoName: string;
+    branchName: string | null;
+    model: string;
+    createdAt: number;
+    updatedAt: number;
+  };
+  sandbox: { status: SandboxStatus } | null;
+  artifacts: Array<{ type: string; url: string; metadata: unknown }>;
+  recentEvents: Array<{ type: string; data: unknown; createdAt: number }>;
 }
 
 export * from "./integrations";

@@ -70,7 +70,7 @@ describe("applyMigrations", () => {
   });
 
   it("skips all migrations when fully migrated", () => {
-    // All 23 IDs already applied
+    // All 24 IDs already applied
     const appliedRows = MIGRATIONS.map((m) => ({ id: m.id }));
     mock.setData("SELECT id FROM _schema_migrations", appliedRows);
 
@@ -96,10 +96,13 @@ describe("applyMigrations", () => {
     const inserts = mock.calls.filter((c) =>
       c.query.includes("INSERT OR IGNORE INTO _schema_migrations")
     );
-    expect(inserts).toHaveLength(14); // migrations 11-24
+    // Migrations 11 through MIGRATIONS.length
+    const unappliedCount = MIGRATIONS.length - 10;
+    expect(inserts).toHaveLength(unappliedCount);
 
     const recordedIds = inserts.map((c) => c.params[0]);
-    expect(recordedIds).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]);
+    const expectedIds = MIGRATIONS.slice(10).map((m) => m.id);
+    expect(recordedIds).toEqual(expectedIds);
   });
 
   it("rethrows non-duplicate-column errors from string migrations", () => {

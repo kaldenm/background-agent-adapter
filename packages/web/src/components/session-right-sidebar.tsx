@@ -8,6 +8,7 @@ import {
   TasksSection,
   FilesChangedSection,
 } from "./sidebar";
+import { ChildSessionsSection } from "./sidebar/child-sessions-section";
 import { extractLatestTasks } from "@/lib/tasks";
 import { extractChangedFiles } from "@/lib/files";
 import type { Artifact, SandboxEvent } from "@/types/session";
@@ -25,6 +26,7 @@ interface SessionState {
   createdAt: number;
   model?: string;
   reasoningEffort?: string;
+  parentSessionId?: string | null;
 }
 
 interface Participant {
@@ -83,6 +85,7 @@ export function SessionRightSidebarContent({
           repoOwner={sessionState.repoOwner}
           repoName={sessionState.repoName}
           artifacts={artifacts}
+          parentSessionId={sessionState.parentSessionId}
         />
       </div>
 
@@ -92,6 +95,9 @@ export function SessionRightSidebarContent({
           <TasksSection tasks={tasks} />
         </CollapsibleSection>
       )}
+
+      {/* Child Sessions */}
+      <ChildSessionsSection sessionId={sessionState.id} />
 
       {/* Files Changed */}
       {filesChanged.length > 0 && (

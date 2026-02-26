@@ -133,8 +133,6 @@ export interface SandboxLifecycleConfig {
   controlPlaneUrl: string;
   /** Default model ID used when the session has no model override. */
   model: string;
-  /** Sandbox lifetime in seconds. Passed to the sandbox provider on create/restore. */
-  sandboxTimeoutSeconds?: number;
   /** Session ID for log correlation. Optional — logs will omit sessionId if not provided. */
   sessionId?: string;
 }
@@ -148,6 +146,9 @@ export const DEFAULT_LIFECYCLE_CONFIG: Omit<SandboxLifecycleConfig, "controlPlan
   inactivity: DEFAULT_INACTIVITY_CONFIG,
   heartbeat: DEFAULT_HEARTBEAT_CONFIG,
 };
+
+/** Child (agent-spawned) sessions get a shorter sandbox timeout. */
+const CHILD_SANDBOX_TIMEOUT_SECONDS = 3600; // 1 hour (vs default 2 hours)
 
 // ==================== Repo Image Lookup ====================
 
@@ -352,6 +353,10 @@ export class SandboxLifecycleManager {
         }
       }
 
+      // Child sessions get a shorter timeout
+      const timeoutSeconds =
+        session.spawn_source === "agent" ? CHILD_SANDBOX_TIMEOUT_SECONDS : undefined;
+
       // Create sandbox via provider
       const createConfig: CreateSandboxConfig = {
         sessionId,
@@ -365,6 +370,7 @@ export class SandboxLifecycleManager {
         userEnvVars,
         repoImageId,
         repoImageSha,
+        timeoutSeconds,
         branch: session.base_branch,
       };
 
@@ -466,6 +472,10 @@ export class SandboxLifecycleManager {
       const userEnvVars = await this.storage.getUserEnvVars();
       const { provider, model: modelId } = this.resolveProviderAndModel(session);
 
+      // Child sessions get a shorter timeout (same logic as doSpawn)
+      const timeoutSeconds =
+        session.spawn_source === "agent" ? CHILD_SANDBOX_TIMEOUT_SECONDS : undefined;
+
       const result = await this.provider.restoreFromSnapshot({
         snapshotImageId,
         sessionId: session.session_name || session.id,
@@ -477,8 +487,8 @@ export class SandboxLifecycleManager {
         provider,
         model: modelId,
         userEnvVars,
+        timeoutSeconds,
         branch: session.base_branch,
-        timeoutSeconds: this.config.sandboxTimeoutSeconds,
       });
 
       if (result.success) {

@@ -26,6 +26,7 @@ export interface SessionItem {
   status: string;
   createdAt: number;
   updatedAt: number;
+  spawnSource?: "user" | "agent";
 }
 
 export function buildSessionHref(session: SessionItem) {
@@ -246,6 +247,12 @@ function SessionListItem({
         <span>{relativeTime}</span>
         <span>·</span>
         <span className="truncate">{repoInfo}</span>
+        {session.spawnSource === "agent" && (
+          <>
+            <span>·</span>
+            <span>Sub-task</span>
+          </>
+        )}
         {session.baseBranch && session.baseBranch !== "main" && (
           <>
             <span>·</span>

@@ -49,7 +49,7 @@ export interface Env {
 }
 
 // Session status
-export type SessionStatus = "created" | "active" | "completed" | "archived";
+export type SessionStatus = "created" | "active" | "completed" | "archived" | "cancelled";
 
 // Sandbox status
 export type SandboxStatus =
@@ -268,6 +268,7 @@ export interface SessionState {
   model?: string;
   reasoningEffort?: string;
   isProcessing: boolean;
+  parentSessionId?: string | null;
 }
 
 // Participant presence
