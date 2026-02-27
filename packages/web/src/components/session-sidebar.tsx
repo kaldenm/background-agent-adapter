@@ -353,8 +353,8 @@ function ChildSessionListItem({
       }`}
     >
       <div className="flex items-center gap-1.5 text-xs">
-        <span className="truncate font-medium text-foreground">{displayTitle}</span>
         <span className="shrink-0 text-muted-foreground">{relativeTime}</span>
+        <span className="truncate font-medium text-foreground">{displayTitle}</span>
       </div>
     </Link>
   );

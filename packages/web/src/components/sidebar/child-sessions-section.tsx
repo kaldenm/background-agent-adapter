@@ -53,11 +53,11 @@ export function ChildSessionsSection({ sessionId }: ChildSessionsSectionProps) {
           >
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-1.5">
-                <span className="text-sm truncate">
-                  {child.title || `${child.repoOwner}/${child.repoName}`}
-                </span>
                 <span className="text-xs text-muted-foreground shrink-0">
                   {formatRelativeTime(child.updatedAt || child.createdAt)}
+                </span>
+                <span className="text-sm truncate">
+                  {child.title || `${child.repoOwner}/${child.repoName}`}
                 </span>
               </div>
               <Badge variant={statusBadgeVariant(child.status)} className="shrink-0">
