@@ -15,6 +15,7 @@ import { useEnabledModels } from "@/hooks/use-enabled-models";
 import { IntegrationSettingsSkeleton } from "./integration-settings-skeleton";
 import { Button } from "@/components/ui/button";
 import { RadioCard } from "@/components/ui/form-controls";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -258,27 +259,25 @@ function GlobalSettingsSection({
     <Section title="Defaults & Scope" description="Global behavior and repository targeting.">
       {error && <Message tone="error" text={error} />}
 
-      <label className="flex items-center justify-between px-4 py-3 border border-border hover:bg-muted/50 transition cursor-pointer mb-4 rounded-sm">
+      <label
+        htmlFor="auto-review-toggle"
+        className="flex items-center justify-between px-4 py-3 border border-border hover:bg-muted/50 transition cursor-pointer mb-4 rounded-sm"
+      >
         <div>
           <span className="text-sm font-medium text-foreground">Auto-review new PRs</span>
           <span className="text-sm text-muted-foreground ml-2">
             Automatically review non-draft PRs when opened
           </span>
         </div>
-        <div className="relative">
-          <input
-            type="checkbox"
-            checked={autoReviewOnOpen}
-            onChange={() => {
-              setAutoReviewOnOpen(!autoReviewOnOpen);
-              setDirty(true);
-              setError("");
-            }}
-            className="sr-only peer"
-          />
-          <div className="w-9 h-5 bg-muted rounded-full peer-checked:bg-accent transition-colors" />
-          <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
-        </div>
+        <Switch
+          id="auto-review-toggle"
+          checked={autoReviewOnOpen}
+          onCheckedChange={(checked) => {
+            setAutoReviewOnOpen(checked);
+            setDirty(true);
+            setError("");
+          }}
+        />
       </label>
 
       <div className="mb-4">
