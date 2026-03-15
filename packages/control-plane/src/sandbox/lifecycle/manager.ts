@@ -80,6 +80,10 @@ export interface SandboxStorage {
   resetCircuitBreaker(): void;
   /** Persist last spawn error */
   setLastSpawnError(error: string | null, timestamp: number | null): void;
+  /** Update code-server URL and (encrypted) password on the sandbox row */
+  updateSandboxCodeServer(url: string, password: string): void | Promise<void>;
+  /** Clear stale code-server URL and password (e.g. on sandbox teardown) */
+  clearSandboxCodeServer(): void;
 }
 
 /**
@@ -360,6 +364,7 @@ export class SandboxLifecycleManager {
         session.spawn_source === "agent" ? CHILD_SANDBOX_TIMEOUT_SECONDS : undefined;
 
       // Create sandbox via provider
+      const codeServerEnabled = session.code_server_enabled === 1;
       const createConfig: CreateSandboxConfig = {
         sessionId,
         sandboxId: expectedSandboxId,
@@ -374,6 +379,7 @@ export class SandboxLifecycleManager {
         repoImageSha,
         timeoutSeconds,
         branch: session.base_branch,
+        codeServerEnabled,
       };
 
       const result = await this.provider.createSandbox(createConfig);
@@ -387,6 +393,11 @@ export class SandboxLifecycleManager {
       // Store provider's internal object ID for snapshot API
       if (result.providerObjectId) {
         this.storage.updateSandboxModalObjectId(result.providerObjectId);
+      }
+
+      // Store code-server details and push to connected clients
+      if (result.codeServerUrl && result.codeServerPassword) {
+        await this.storeAndBroadcastCodeServer(result.codeServerUrl, result.codeServerPassword);
       }
 
       this.storage.updateSandboxStatus("connecting");
@@ -478,6 +489,7 @@ export class SandboxLifecycleManager {
       const timeoutSeconds =
         session.spawn_source === "agent" ? CHILD_SANDBOX_TIMEOUT_SECONDS : undefined;
 
+      const codeServerEnabled = session.code_server_enabled === 1;
       const result = await this.provider.restoreFromSnapshot({
         snapshotImageId,
         sessionId: session.session_name || session.id,
@@ -491,6 +503,7 @@ export class SandboxLifecycleManager {
         userEnvVars,
         timeoutSeconds,
         branch: session.base_branch,
+        codeServerEnabled,
       });
 
       if (result.success) {
@@ -503,6 +516,11 @@ export class SandboxLifecycleManager {
         // Store provider's internal object ID for future snapshots
         if (result.providerObjectId) {
           this.storage.updateSandboxModalObjectId(result.providerObjectId);
+        }
+
+        // Store code-server details and push to connected clients
+        if (result.codeServerUrl && result.codeServerPassword) {
+          await this.storeAndBroadcastCodeServer(result.codeServerUrl, result.codeServerPassword);
         }
 
         this.storage.updateSandboxStatus("connecting");
@@ -664,6 +682,7 @@ export class SandboxLifecycleManager {
         this.log.error("Heartbeat snapshot failed", { error: e instanceof Error ? e : String(e) })
       );
       this.storage.updateSandboxStatus("stale");
+      this.storage.clearSandboxCodeServer();
       this.broadcaster.broadcast({ type: "sandbox_status", status: "stale" });
 
       // Best-effort shutdown: tell sandbox to exit cleanly (connection may already be dead).
@@ -699,6 +718,7 @@ export class SandboxLifecycleManager {
         await this.callbacks.onSandboxTerminating?.();
         // Set status to stopped FIRST to block reconnection attempts
         this.storage.updateSandboxStatus("stopped");
+        this.storage.clearSandboxCodeServer();
         this.broadcaster.broadcast({ type: "sandbox_status", status: "stopped" });
 
         // Take snapshot
@@ -801,6 +821,23 @@ export class SandboxLifecycleManager {
    */
   private getConnectedClientCount(): number {
     return this.wsManager.getConnectedClientCount();
+  }
+
+  /**
+   * Store code-server details in the database and push to connected clients.
+   * Shared by doSpawn() and restoreFromSnapshot().
+   *
+   * The storage adapter may encrypt the password before persisting;
+   * the plaintext is broadcast over the already-authenticated WebSocket.
+   */
+  private async storeAndBroadcastCodeServer(url: string, password: string): Promise<void> {
+    this.log.info("Storing and broadcasting code-server info", { url });
+    await this.storage.updateSandboxCodeServer(url, password);
+    this.broadcaster.broadcast({
+      type: "code_server_info",
+      url,
+      password,
+    });
   }
 
   /**

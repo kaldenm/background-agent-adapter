@@ -21,6 +21,7 @@ from pathlib import Path
 
 import httpx
 
+from .constants import CODE_SERVER_PORT
 from .log_config import configure_logging, get_logger
 
 configure_logging()
@@ -52,6 +53,7 @@ class SandboxSupervisor:
     def __init__(self):
         self.opencode_process: asyncio.subprocess.Process | None = None
         self.bridge_process: asyncio.subprocess.Process | None = None
+        self.code_server_process: asyncio.subprocess.Process | None = None
         self.shutdown_event = asyncio.Event()
         self.git_sync_complete = asyncio.Event()
         self.opencode_ready = asyncio.Event()
@@ -325,6 +327,46 @@ class SandboxSupervisor:
         except Exception as e:
             self.log.warn("openai_oauth.setup_error", exc=e)
 
+    async def start_code_server(self) -> None:
+        """Start code-server for browser-based VS Code editing."""
+        password = os.environ.get("CODE_SERVER_PASSWORD")
+        if not password:
+            self.log.info("code_server.skip", reason="no_password")
+            return
+
+        # Use repo path if cloned, otherwise /workspace
+        workdir = self.workspace_path
+        if self.repo_path.exists() and (self.repo_path / ".git").exists():
+            workdir = self.repo_path
+
+        self.code_server_process = await asyncio.create_subprocess_exec(
+            "code-server",
+            "--bind-addr",
+            f"0.0.0.0:{CODE_SERVER_PORT}",
+            "--auth",
+            "password",
+            "--disable-telemetry",
+            str(workdir),
+            cwd=workdir,
+            env={**os.environ, "PASSWORD": password},
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        asyncio.create_task(self._forward_code_server_logs())
+        self.log.info("code_server.started", port=CODE_SERVER_PORT)
+
+    async def _forward_code_server_logs(self) -> None:
+        """Forward code-server stdout to supervisor stdout."""
+        if not self.code_server_process or not self.code_server_process.stdout:
+            return
+
+        try:
+            async for line in self.code_server_process.stdout:
+                self.log.info("code_server.stdout", line=line.decode().rstrip())
+        except Exception as e:
+            self.log.warn("code_server.log_forward_error", exc=e)
+
     async def start_opencode(self) -> None:
         """Start OpenCode server with configuration."""
         self._setup_openai_oauth()
@@ -499,6 +541,7 @@ class SandboxSupervisor:
         """Monitor child processes and restart on crash."""
         restart_count = 0
         bridge_restart_count = 0
+        code_server_restart_count = 0
 
         while not self.shutdown_event.is_set():
             # Check OpenCode process
@@ -576,6 +619,29 @@ class SandboxSupervisor:
                     )
                     await asyncio.sleep(delay)
                     await self.start_bridge()
+
+            # Check code-server process (non-fatal, best-effort restart)
+            if self.code_server_process and self.code_server_process.returncode is not None:
+                code_server_restart_count += 1
+                self.log.warn(
+                    "code_server.crash",
+                    exit_code=self.code_server_process.returncode,
+                    restart_count=code_server_restart_count,
+                )
+
+                if code_server_restart_count <= self.MAX_RESTARTS:
+                    delay = min(self.BACKOFF_BASE**code_server_restart_count, self.BACKOFF_MAX)
+                    await asyncio.sleep(delay)
+                    try:
+                        await self.start_code_server()
+                    except Exception as e:
+                        self.log.warn("code_server.restart_failed", exc=e)
+                        self.code_server_process = None
+                else:
+                    self.log.warn(
+                        "code_server.max_restarts", restart_count=code_server_restart_count
+                    )
+                    self.code_server_process = None
 
             await asyncio.sleep(1.0)
 
@@ -815,6 +881,9 @@ class SandboxSupervisor:
                 await self.shutdown_event.wait()
                 return
 
+            # Phase 3.5: Start code-server (non-blocking, no health check needed)
+            await self.start_code_server()
+
             # Phase 4: Start OpenCode server (in repo directory)
             await self.start_opencode()
             opencode_ready = True
@@ -865,6 +934,14 @@ class SandboxSupervisor:
                 await asyncio.wait_for(self.bridge_process.wait(), timeout=5.0)
             except TimeoutError:
                 self.bridge_process.kill()
+
+        # Terminate code-server
+        if self.code_server_process and self.code_server_process.returncode is None:
+            self.code_server_process.terminate()
+            try:
+                await asyncio.wait_for(self.code_server_process.wait(), timeout=5.0)
+            except TimeoutError:
+                self.code_server_process.kill()
 
         # Terminate OpenCode
         if self.opencode_process and self.opencode_process.returncode is None:

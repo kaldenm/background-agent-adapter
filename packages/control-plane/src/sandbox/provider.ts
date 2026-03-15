@@ -57,6 +57,8 @@ export interface CreateSandboxConfig {
   timeoutSeconds?: number;
   /** Git branch to work on (defaults to repo's default branch) */
   branch?: string;
+  /** Whether to enable code-server (browser-based editor) in the sandbox */
+  codeServerEnabled?: boolean;
 }
 
 /**
@@ -71,6 +73,10 @@ export interface CreateSandboxResult {
   status: string;
   /** Creation timestamp */
   createdAt: number;
+  /** Code-server tunnel URL (if available) */
+  codeServerUrl?: string;
+  /** Code-server password (if available) */
+  codeServerPassword?: string;
 }
 
 /**
@@ -103,6 +109,8 @@ export interface RestoreConfig {
   branch?: string;
   /** Correlation context for downstream tracing */
   correlation?: CorrelationContext;
+  /** Whether to enable code-server (browser-based editor) in the sandbox */
+  codeServerEnabled?: boolean;
 }
 
 /**
@@ -117,6 +125,10 @@ export interface RestoreResult {
   providerObjectId?: string;
   /** Error message if failed */
   error?: string;
+  /** Code-server tunnel URL (if available) */
+  codeServerUrl?: string;
+  /** Code-server password (if available) */
+  codeServerPassword?: string;
 }
 
 /**

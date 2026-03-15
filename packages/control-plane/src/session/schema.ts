@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS session (
   parent_session_id TEXT,                           -- Parent session ID (NULL for top-level)
   spawn_source TEXT NOT NULL DEFAULT 'user',        -- 'user' or 'agent'
   spawn_depth INTEGER NOT NULL DEFAULT 0,           -- 0 for top-level, parent.depth + 1 for children
+  code_server_enabled INTEGER NOT NULL DEFAULT 0,   -- 0 = disabled, 1 = enabled (opt-in)
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -101,6 +102,8 @@ CREATE TABLE IF NOT EXISTS sandbox (
   last_spawn_error_at INTEGER,                      -- Timestamp of last spawn error
   spawn_failure_count INTEGER DEFAULT 0,            -- Circuit breaker: consecutive spawn failures
   last_spawn_failure INTEGER,                       -- Timestamp of last spawn failure
+  code_server_url TEXT,                             -- Code-server tunnel URL (rotates on wake/restore)
+  code_server_password TEXT,                        -- Code-server password (rotates on each wake/restore)
   created_at INTEGER NOT NULL
 );
 
@@ -338,6 +341,21 @@ export const MIGRATIONS: readonly SchemaMigration[] = [
       ALTER TABLE session ADD COLUMN spawn_source TEXT NOT NULL DEFAULT 'user';
       ALTER TABLE session ADD COLUMN spawn_depth INTEGER NOT NULL DEFAULT 0;
     `,
+  },
+  {
+    id: 26,
+    description: "Add code-server fields to sandbox",
+    // Two ALTER TABLE statements — partial failure is safe because runMigration()
+    // handles "column already exists" errors, so re-running is idempotent.
+    run: `
+      ALTER TABLE sandbox ADD COLUMN code_server_url TEXT;
+      ALTER TABLE sandbox ADD COLUMN code_server_password TEXT;
+    `,
+  },
+  {
+    id: 27,
+    description: "Add code_server_enabled to session",
+    run: `ALTER TABLE session ADD COLUMN code_server_enabled INTEGER NOT NULL DEFAULT 0`,
   },
 ];
 
