@@ -16,7 +16,7 @@ import type {
   ArtifactType,
   Logger,
 } from "../types";
-import { generateInternalToken } from "../auth";
+import { buildInternalAuthHeaders } from "../auth";
 
 /**
  * Tool names included in summary display.
@@ -77,14 +77,10 @@ export async function extractAgentResponse(
 
   try {
     // Build auth headers
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (deps.internalSecret) {
-      const authToken = await generateInternalToken(deps.internalSecret);
-      headers["Authorization"] = `Bearer ${authToken}`;
-    }
-    if (traceId) {
-      headers["x-trace-id"] = traceId;
-    }
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      ...(await buildInternalAuthHeaders(deps.internalSecret, traceId)),
+    };
 
     // Fetch all events for this message, paginating if necessary
     const allEvents: EventResponse[] = [];
