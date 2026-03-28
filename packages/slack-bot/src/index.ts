@@ -14,6 +14,7 @@ import type {
   UserPreferences,
   SlackInteractionPayload,
 } from "./types";
+import { stripMentions, isDmDispatchable } from "./dm-utils";
 import {
   verifySlackSignature,
   postMessage,
@@ -1187,6 +1188,16 @@ async function handleSlackEvent(
       thread_ts?: string;
       bot_id?: string;
       tab?: string;
+      channel_type?: string; // "im" for direct messages, "channel" for public channels, etc.
+      subtype?: string; // e.g. "bot_message", "message_changed", etc.
+      attachments?: Array<{
+        text?: string;
+        pretext?: string;
+        author_name?: string;
+        from_url?: string;
+        channel_name?: string;
+        footer?: string;
+      }>;
     };
   },
   env: Env,
@@ -1209,6 +1220,24 @@ async function handleSlackEvent(
     return;
   }
 
+  // Handle direct messages (DMs) to the bot
+  if (isDmDispatchable(event)) {
+    await handleDirectMessage(
+      {
+        type: event.type,
+        text: event.text!,
+        user: event.user!,
+        channel: event.channel!,
+        ts: event.ts!,
+        thread_ts: event.thread_ts,
+        channel_type: event.channel_type,
+      },
+      env,
+      traceId
+    );
+    return;
+  }
+
   // Handle app_mention events
   if (event.type === "app_mention" && event.text && event.channel && event.ts) {
     await handleAppMention(event as Required<typeof event>, env, traceId);
@@ -1216,31 +1245,50 @@ async function handleSlackEvent(
 }
 
 /**
- * Handle app_mention events.
+ * Parameters for the shared incoming message handler.
  */
-async function handleAppMention(
-  event: {
-    type: string;
-    text: string;
-    user: string;
-    channel: string;
-    ts: string;
-    thread_ts?: string;
-  },
-  env: Env,
-  traceId?: string
-): Promise<void> {
-  const { text, channel, ts, thread_ts } = event;
+interface IncomingMessageParams {
+  text: string; // Already cleaned message text
+  user: string;
+  channel: string;
+  ts: string;
+  threadTs?: string;
+  channelName?: string;
+  channelDescription?: string;
+  env: Env;
+  traceId?: string;
+}
 
-  // Remove the bot mention from the text
-  const messageText = text.replace(/<@[A-Z0-9]+>/g, "").trim();
+/**
+ * Shared logic for handling incoming messages (both @mentions and DMs).
+ *
+ * Handles:
+ * - Thread context fetch
+ * - Existing session lookup + prompt
+ * - Repo classification
+ * - Clarification / repo selection UI
+ * - Ack message + session creation
+ * - Session started message
+ */
+async function handleIncomingMessage(params: IncomingMessageParams): Promise<void> {
+  const {
+    text: messageText,
+    user,
+    channel,
+    ts,
+    threadTs,
+    channelName,
+    channelDescription,
+    env,
+    traceId,
+  } = params;
 
   if (!messageText) {
     await postMessage(
       env.SLACK_BOT_TOKEN,
       channel,
       "Hi! Please include a message with your request.",
-      { thread_ts: thread_ts || ts }
+      { thread_ts: threadTs || ts }
     );
     return;
   }
@@ -1248,9 +1296,9 @@ async function handleAppMention(
   // Get thread context if in a thread (include bot messages for better context)
   // Fetched early so it's available for both existing session prompts and new sessions
   let previousMessages: string[] | undefined;
-  if (thread_ts) {
+  if (threadTs) {
     try {
-      const threadResult = await getThreadMessages(env.SLACK_BOT_TOKEN, channel, thread_ts, 10);
+      const threadResult = await getThreadMessages(env.SLACK_BOT_TOKEN, channel, threadTs, 10);
       if (threadResult.ok && threadResult.messages) {
         const filtered = threadResult.messages.filter((m) => m.ts !== ts);
         // Resolve unique user IDs to display names for attribution
@@ -1269,27 +1317,14 @@ async function handleAppMention(
     }
   }
 
-  // Get channel context (fetched early so it's available for all paths)
-  let channelName: string | undefined;
-  let channelDescription: string | undefined;
-
-  try {
-    const channelInfo = await getChannelInfo(env.SLACK_BOT_TOKEN, channel);
-    if (channelInfo.ok && channelInfo.channel) {
-      channelName = channelInfo.channel.name;
-      channelDescription = channelInfo.channel.topic?.value || channelInfo.channel.purpose?.value;
-    }
-  } catch {
-    // Channel info not available
-  }
-
-  if (thread_ts) {
-    const existingSession = await lookupThreadSession(env, channel, thread_ts);
+  // Check for existing session in this thread
+  if (threadTs) {
+    const existingSession = await lookupThreadSession(env, channel, threadTs);
     if (existingSession) {
       const callbackContext: CallbackContext = {
         source: "slack",
         channel,
-        threadTs: thread_ts,
+        threadTs,
         repoFullName: existingSession.repoFullName,
         model: existingSession.model,
         reasoningEffort: existingSession.reasoningEffort,
@@ -1306,7 +1341,7 @@ async function handleAppMention(
         env,
         existingSession.sessionId,
         promptContent,
-        `slack:${event.user}`,
+        `slack:${user}`,
         callbackContext,
         traceId
       );
@@ -1329,9 +1364,9 @@ async function handleAppMention(
         trace_id: traceId,
         session_id: existingSession.sessionId,
         channel,
-        thread_ts,
+        thread_ts: threadTs,
       });
-      await clearThreadSession(env, channel, thread_ts);
+      await clearThreadSession(env, channel, threadTs);
     }
   }
 
@@ -1343,7 +1378,7 @@ async function handleAppMention(
       channelId: channel,
       channelName,
       channelDescription,
-      threadTs: thread_ts,
+      threadTs,
       previousMessages,
     },
     traceId
@@ -1359,18 +1394,18 @@ async function handleAppMention(
         env.SLACK_BOT_TOKEN,
         channel,
         "Sorry, no repositories are currently available. Please check that the GitHub App is installed and configured.",
-        { thread_ts: thread_ts || ts }
+        { thread_ts: threadTs || ts }
       );
       return;
     }
 
     // Store original message in KV for later retrieval when user selects a repo
-    const pendingKey = `pending:${channel}:${thread_ts || ts}`;
+    const pendingKey = `pending:${channel}:${threadTs || ts}`;
     await env.SLACK_KV.put(
       pendingKey,
       JSON.stringify({
         message: messageText,
-        userId: event.user,
+        userId: user,
         previousMessages,
         channelName,
         channelDescription,
@@ -1396,7 +1431,7 @@ async function handleAppMention(
       channel,
       `I couldn't determine which repository you're referring to. ${result.reasoning}`,
       {
-        thread_ts: thread_ts || ts,
+        thread_ts: threadTs || ts,
         blocks: [
           {
             type: "section",
@@ -1429,6 +1464,7 @@ async function handleAppMention(
 
   // We have a confident repo match - acknowledge and start session
   const { repo } = result;
+  const threadKey = threadTs || ts;
 
   // Post initial acknowledgment
   const ackResult = await postMessage(
@@ -1436,7 +1472,7 @@ async function handleAppMention(
     channel,
     `Working on *${repo.fullName}*...`,
     {
-      thread_ts: thread_ts || ts,
+      thread_ts: threadKey,
       blocks: [
         {
           type: "section",
@@ -1450,7 +1486,6 @@ async function handleAppMention(
   );
 
   const ackTs = ackResult.ts;
-  const threadKey = thread_ts || ts;
 
   // Create session and send prompt using shared logic
   const sessionResult = await startSessionAndSendPrompt(
@@ -1459,7 +1494,7 @@ async function handleAppMention(
     channel,
     threadKey,
     messageText,
-    event.user,
+    user,
     previousMessages,
     channelName,
     channelDescription,
@@ -1501,6 +1536,84 @@ async function handleAppMention(
 
   // Post that the agent is working
   await postSessionStartedMessage(env, channel, threadKey, sessionResult.sessionId);
+}
+
+/**
+ * Handle app_mention events.
+ */
+async function handleAppMention(
+  event: {
+    type: string;
+    text: string;
+    user: string;
+    channel: string;
+    ts: string;
+    thread_ts?: string;
+  },
+  env: Env,
+  traceId?: string
+): Promise<void> {
+  // Remove the bot mention from the text
+  const messageText = stripMentions(event.text);
+
+  // Get channel context
+  let channelName: string | undefined;
+  let channelDescription: string | undefined;
+
+  try {
+    const channelInfo = await getChannelInfo(env.SLACK_BOT_TOKEN, event.channel);
+    if (channelInfo.ok && channelInfo.channel) {
+      channelName = channelInfo.channel.name;
+      channelDescription = channelInfo.channel.topic?.value || channelInfo.channel.purpose?.value;
+    }
+  } catch {
+    // Channel info not available
+  }
+
+  await handleIncomingMessage({
+    text: messageText,
+    user: event.user,
+    channel: event.channel,
+    ts: event.ts,
+    threadTs: event.thread_ts,
+    channelName,
+    channelDescription,
+    env,
+    traceId,
+  });
+}
+
+/**
+ * Handle direct messages (DMs) to the bot.
+ * Users don't need to @mention the bot in DMs.
+ */
+async function handleDirectMessage(
+  event: {
+    type: string;
+    text: string;
+    user: string;
+    channel: string;
+    ts: string;
+    thread_ts?: string;
+    channel_type?: string;
+  },
+  env: Env,
+  traceId?: string
+): Promise<void> {
+  log.info("slack.dm.received", { trace_id: traceId, user: event.user, channel: event.channel });
+
+  // Strip any @mentions (users may type "@Bot <request>" in DMs)
+  const messageText = stripMentions(event.text);
+
+  await handleIncomingMessage({
+    text: messageText,
+    user: event.user,
+    channel: event.channel,
+    ts: event.ts,
+    threadTs: event.thread_ts,
+    env,
+    traceId,
+  });
 }
 
 /**
