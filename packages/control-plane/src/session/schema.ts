@@ -106,6 +106,8 @@ CREATE TABLE IF NOT EXISTS sandbox (
   code_server_url TEXT,                             -- Code-server tunnel URL (rotates on wake/restore)
   code_server_password TEXT,                        -- Code-server password (rotates on each wake/restore)
   tunnel_urls TEXT,                                 -- JSON mapping of port -> tunnel URL for extra ports
+  ttyd_url TEXT,                                    -- ttyd proxy tunnel URL
+  ttyd_token TEXT,                                  -- Encrypted JWT token for ttyd auth
   created_at INTEGER NOT NULL
 );
 
@@ -365,6 +367,14 @@ export const MIGRATIONS: readonly SchemaMigration[] = [
     run: (sql) => {
       runMigration(sql, `ALTER TABLE session ADD COLUMN sandbox_settings TEXT DEFAULT NULL`);
       runMigration(sql, `ALTER TABLE sandbox ADD COLUMN tunnel_urls TEXT`);
+    },
+  },
+  {
+    id: 29,
+    description: "Add ttyd_url and ttyd_token to sandbox",
+    run: (sql) => {
+      runMigration(sql, `ALTER TABLE sandbox ADD COLUMN ttyd_url TEXT`);
+      runMigration(sql, `ALTER TABLE sandbox ADD COLUMN ttyd_token TEXT`);
     },
   },
 ];

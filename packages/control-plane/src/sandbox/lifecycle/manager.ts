@@ -35,8 +35,12 @@ import {
 import { extractProviderAndModel } from "../../utils/models";
 import { createLogger, type Logger } from "../../logger";
 import { hashToken } from "../../auth/crypto";
+import { mintJwt } from "../../auth/jwt";
 
 const log = createLogger("lifecycle-manager");
+
+/** TTL for terminal auth JWTs (24 hours, matching typical sandbox lifetime). */
+const TERMINAL_TOKEN_TTL_SECONDS = 86400;
 
 // ==================== Dependency Interfaces ====================
 
@@ -92,6 +96,10 @@ export interface SandboxStorage {
   updateSandboxTunnelUrls(urls: Record<string, string>): void | Promise<void>;
   /** Clear stale tunnel URLs (e.g. on sandbox teardown) */
   clearSandboxTunnelUrls(): void;
+  /** Update ttyd proxy URL and (encrypted) JWT token on the sandbox row */
+  updateSandboxTtyd(url: string, token: string): void | Promise<void>;
+  /** Clear stale ttyd URL and token (e.g. on sandbox teardown) */
+  clearSandboxTtyd(): void;
 }
 
 /**
@@ -408,6 +416,14 @@ export class SandboxLifecycleManager {
         await this.storeAndBroadcastCodeServer(result.codeServerUrl, result.codeServerPassword);
       }
       await this.storeAndBroadcastTunnelUrls(result.tunnelUrls);
+      if (result.ttydUrl) {
+        await this.storeAndBroadcastTtyd(
+          result.ttydUrl,
+          sandboxAuthToken,
+          sessionId,
+          expectedSandboxId
+        );
+      }
 
       this.storage.updateSandboxStatus("connecting");
       this.broadcaster.broadcast({ type: "sandbox_status", status: "connecting" });
@@ -536,6 +552,14 @@ export class SandboxLifecycleManager {
           await this.storeAndBroadcastCodeServer(result.codeServerUrl, result.codeServerPassword);
         }
         await this.storeAndBroadcastTunnelUrls(result.tunnelUrls);
+        if (result.ttydUrl) {
+          await this.storeAndBroadcastTtyd(
+            result.ttydUrl,
+            sandboxAuthToken,
+            session.session_name || session.id,
+            expectedSandboxId
+          );
+        }
 
         this.storage.updateSandboxStatus("connecting");
         this.broadcaster.broadcast({ type: "sandbox_status", status: "connecting" });
@@ -700,6 +724,7 @@ export class SandboxLifecycleManager {
       this.storage.updateSandboxStatus("failed");
       this.storage.clearSandboxCodeServer();
       this.storage.clearSandboxTunnelUrls();
+      this.storage.clearSandboxTtyd();
       this.broadcaster.broadcast({ type: "sandbox_status", status: "failed" });
       this.broadcaster.broadcast({
         type: "sandbox_error",
@@ -731,6 +756,7 @@ export class SandboxLifecycleManager {
       this.storage.updateSandboxStatus("stale");
       this.storage.clearSandboxCodeServer();
       this.storage.clearSandboxTunnelUrls();
+      this.storage.clearSandboxTtyd();
       this.broadcaster.broadcast({ type: "sandbox_status", status: "stale" });
 
       // Best-effort shutdown: tell sandbox to exit cleanly (connection may already be dead).
@@ -768,6 +794,7 @@ export class SandboxLifecycleManager {
         this.storage.updateSandboxStatus("stopped");
         this.storage.clearSandboxCodeServer();
         this.storage.clearSandboxTunnelUrls();
+        this.storage.clearSandboxTtyd();
         this.broadcaster.broadcast({ type: "sandbox_status", status: "stopped" });
 
         // Take snapshot
@@ -896,15 +923,22 @@ export class SandboxLifecycleManager {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
 
       const settings = parsed as Record<string, unknown>;
+      const result: SandboxSettings = {};
+
       // Validate tunnelPorts at the boundary — data may come from untrusted callers
       if (settings.tunnelPorts !== undefined) {
         if (!Array.isArray(settings.tunnelPorts)) return {};
         const valid = settings.tunnelPorts.filter(
           (p: unknown) => typeof p === "number" && Number.isInteger(p) && p >= 1 && p <= 65535
         );
-        return { tunnelPorts: valid.slice(0, MAX_TUNNEL_PORTS) };
+        result.tunnelPorts = valid.slice(0, MAX_TUNNEL_PORTS);
       }
-      return settings as SandboxSettings;
+
+      if (typeof settings.terminalEnabled === "boolean") {
+        result.terminalEnabled = settings.terminalEnabled;
+      }
+
+      return result;
     } catch {
       this.log.warn("Failed to parse sandbox_settings, using defaults");
       return {};
@@ -918,6 +952,31 @@ export class SandboxLifecycleManager {
     this.log.info("Storing and broadcasting tunnel URLs", { ports: Object.keys(urls) });
     await this.storage.updateSandboxTunnelUrls(urls);
     this.broadcaster.broadcast({ type: "tunnel_urls", urls });
+  }
+
+  /**
+   * Mint a terminal JWT, persist the ttyd proxy URL + token, and broadcast to clients.
+   * The storage adapter encrypts the token before persisting (same pattern as code-server).
+   */
+  private async storeAndBroadcastTtyd(
+    url: string,
+    sandboxAuthToken: string,
+    sessionId: string,
+    sandboxId: string
+  ): Promise<void> {
+    const token = await mintJwt(
+      {
+        sub: sessionId,
+        sid: sandboxId,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + TERMINAL_TOKEN_TTL_SECONDS,
+      },
+      sandboxAuthToken
+    );
+
+    this.log.info("Storing and broadcasting ttyd info", { url });
+    await this.storage.updateSandboxTtyd(url, token);
+    this.broadcaster.broadcast({ type: "ttyd_info", url, token });
   }
 
   /**
