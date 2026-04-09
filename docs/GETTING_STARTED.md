@@ -162,6 +162,10 @@ Create an R2 API Token:
 
 The control plane calls the Daytona REST API directly — no shim service to deploy.
 
+> **Important**: Unlike Modal, the Daytona provider does not automatically inject LLM API keys into
+> sandboxes. If you plan to use Claude models, add `ANTHROPIC_API_KEY` as a **global secret** in
+> Settings > Secrets after deploying. See [Secrets Management](SECRETS.md) for details.
+
 ### Anthropic
 
 1. Go to [Anthropic Console](https://console.anthropic.com)
@@ -340,6 +344,11 @@ vercel_team_id              = "team_xxxxx"       # Your Vercel ID (even personal
 modal_token_id              = "your-modal-token-id"
 modal_token_secret          = "your-modal-token-secret"
 modal_workspace             = "your-modal-workspace"
+
+# Daytona (only required when sandbox_provider = "daytona")
+# daytona_api_url           = "https://app.daytona.io/api"
+# daytona_api_key           = "your-daytona-api-key"
+# daytona_base_snapshot     = "your-snapshot-name"
 
 # GitHub App (used for both OAuth and repository access)
 github_client_id     = "Iv1.abc123..."           # From GitHub App settings
@@ -782,6 +791,19 @@ If the bot doesn't see the original message when tagged in a thread reply:
 4. Check that `github_bot_username` matches your App's bot login (e.g., `my-app[bot]`)
 5. For PR reviews, ensure the bot is assigned as a reviewer (not just mentioned)
 6. For comment actions, ensure the bot is @mentioned in a **PR** comment (not an issue)
+
+### "Model not found" errors (Daytona provider)
+
+If sessions fail with "Model not found" when using `sandbox_provider = "daytona"`, the required LLM
+API key is likely missing. Unlike Modal (which injects keys automatically), Daytona requires you to
+add them as global secrets:
+
+1. Go to **Settings > Secrets** in the web app
+2. Select **All Repositories (Global)** from the scope dropdown
+3. Add the key for your chosen provider (e.g., `ANTHROPIC_API_KEY` for Claude models)
+4. Click **Save**
+
+See [Secrets Management](SECRETS.md) for more on global and repository secrets.
 
 ### Vercel provider error when using `web_platform = "cloudflare"`
 
