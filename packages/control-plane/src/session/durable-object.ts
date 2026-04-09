@@ -447,6 +447,12 @@ export class SessionDO extends DurableObject<Env> {
             generateId: () => generateId(),
             pushBranchToRemote: (headBranch, pushSpec) =>
               this.pushBranchToRemote(headBranch, pushSpec),
+            broadcastSessionBranch: (branchName) => {
+              this.broadcast({
+                type: "session_branch",
+                branchName,
+              });
+            },
             broadcastArtifactCreated: (artifact) => {
               this.broadcast({
                 type: "artifact_created",
@@ -1170,12 +1176,14 @@ export class SessionDO extends DurableObject<Env> {
     // Fetch sandbox once and thread it through to avoid a redundant SQLite read.
     const sandbox = this.getSandbox();
     const state = await this.getSessionState(sandbox);
+    const artifacts = this.messageService.listArtifacts();
     const replay = this.getReplayData();
 
     this.safeSend(ws, {
       type: "subscribed",
       sessionId: state.id,
       state,
+      artifacts: artifacts.artifacts,
       participantId: participant.id,
       participant: {
         participantId: participant.id,
