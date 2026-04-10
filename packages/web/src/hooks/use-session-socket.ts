@@ -215,6 +215,22 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
       // Other events (tool_call, user_message, git_sync, etc.) - add normally
       setEvents((prev) => [...prev, event]);
     }
+
+    if (
+      event.type === "step_finish" &&
+      typeof event.cost === "number" &&
+      Number.isFinite(event.cost)
+    ) {
+      const stepCost = event.cost;
+      setSessionState((prev) =>
+        prev
+          ? {
+              ...prev,
+              totalCost: (prev.totalCost ?? 0) + stepCost,
+            }
+          : prev
+      );
+    }
   }, []);
 
   const handleMessage = useCallback(
@@ -232,6 +248,7 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
               ...data.state,
               // Backward-compatible default for older sessions that may omit this.
               isProcessing: data.state.isProcessing ?? false,
+              totalCost: data.state.totalCost ?? 0,
             });
           }
           // Store the current user's participant ID and info for author attribution
