@@ -823,6 +823,12 @@ export class SessionRepository {
     return this.rows<ArtifactRow>(result);
   }
 
+  getArtifactById(artifactId: string): ArtifactRow | null {
+    const result = this.sql.exec(`SELECT * FROM artifacts WHERE id = ?`, artifactId);
+    const rows = this.rows<ArtifactRow>(result);
+    return rows[0] ?? null;
+  }
+
   // === WS CLIENT MAPPING ===
 
   upsertWsClientMapping(data: WsClientMappingData): void {

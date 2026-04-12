@@ -12,7 +12,14 @@
 # Provider Authentication
 # =============================================================================
 
-# Cloudflare API token with Workers, KV, R2, and D1 permissions
+# Cloudflare API token.
+# Required account permissions:
+#   - Workers Scripts: Edit
+#   - Workers KV Storage: Edit
+#   - Workers R2 Storage: Edit
+#   - D1: Edit
+# Optional if you manage Cloudflare routes/custom domains:
+#   - Workers Routes: Edit
 # Create at: https://dash.cloudflare.com/profile/api-tokens
 cloudflare_api_token = ""
 

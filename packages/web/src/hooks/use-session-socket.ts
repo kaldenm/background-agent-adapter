@@ -7,6 +7,7 @@ import type { Artifact, SandboxEvent } from "@/types/session";
 import type {
   ParticipantPresence,
   SandboxEvent as SharedSandboxEvent,
+  ScreenshotArtifactMetadata,
   ServerMessage,
   SessionArtifact,
   SessionState as SharedSessionState,
@@ -112,6 +113,15 @@ function toUiSandboxEvent(event: SharedSandboxEvent): SandboxEvent {
 
 type PrState = NonNullable<NonNullable<Artifact["metadata"]>["prState"]>;
 const PR_STATES = new Set<string>(["open", "merged", "closed", "draft"]);
+const SCREENSHOT_MIME_TYPES = new Set<ScreenshotArtifactMetadata["mimeType"]>([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+
+function isScreenshotMimeType(value: string): value is ScreenshotArtifactMetadata["mimeType"] {
+  return SCREENSHOT_MIME_TYPES.has(value as ScreenshotArtifactMetadata["mimeType"]);
+}
 
 function toUiArtifact(artifact: SessionArtifact): Artifact {
   const meta = artifact.metadata as Record<string, unknown> | null;
@@ -133,6 +143,35 @@ function toUiArtifact(artifact: SessionArtifact): Artifact {
           base: typeof meta.base === "string" ? meta.base : undefined,
           provider: typeof meta.provider === "string" ? meta.provider : undefined,
           filename: typeof meta.filename === "string" ? meta.filename : undefined,
+          objectKey: typeof meta.objectKey === "string" ? meta.objectKey : undefined,
+          mimeType:
+            typeof meta.mimeType === "string" && isScreenshotMimeType(meta.mimeType)
+              ? meta.mimeType
+              : undefined,
+          sizeBytes:
+            typeof meta.sizeBytes === "number" &&
+            Number.isFinite(meta.sizeBytes) &&
+            meta.sizeBytes >= 0
+              ? meta.sizeBytes
+              : undefined,
+          viewport:
+            meta.viewport &&
+            typeof meta.viewport === "object" &&
+            typeof (meta.viewport as { width?: unknown }).width === "number" &&
+            Number.isFinite((meta.viewport as { width: number }).width) &&
+            (meta.viewport as { width: number }).width > 0 &&
+            typeof (meta.viewport as { height?: unknown }).height === "number" &&
+            Number.isFinite((meta.viewport as { height: number }).height) &&
+            (meta.viewport as { height: number }).height > 0
+              ? {
+                  width: (meta.viewport as { width: number }).width,
+                  height: (meta.viewport as { height: number }).height,
+                }
+              : undefined,
+          sourceUrl: typeof meta.sourceUrl === "string" ? meta.sourceUrl : undefined,
+          fullPage: typeof meta.fullPage === "boolean" ? meta.fullPage : undefined,
+          annotated: typeof meta.annotated === "boolean" ? meta.annotated : undefined,
+          caption: typeof meta.caption === "string" ? meta.caption : undefined,
           previewStatus:
             meta.previewStatus === "active" ||
             meta.previewStatus === "outdated" ||

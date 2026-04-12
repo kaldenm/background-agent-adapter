@@ -37,6 +37,13 @@ module "control_plane_worker" {
     }
   ]
 
+  r2_buckets = [
+    {
+      binding_name = "MEDIA_BUCKET"
+      bucket_name  = cloudflare_r2_bucket.media.name
+    }
+  ]
+
   service_bindings = concat(
     var.enable_slack_bot ? [
       {
@@ -108,5 +115,10 @@ module "control_plane_worker" {
 
   cron_triggers = ["* * * * *"]
 
-  depends_on = [null_resource.control_plane_build, module.session_index_kv, null_resource.d1_migrations, module.linear_bot_worker]
+  depends_on = [
+    null_resource.control_plane_build,
+    module.session_index_kv,
+    null_resource.d1_migrations,
+    module.linear_bot_worker,
+  ]
 }
