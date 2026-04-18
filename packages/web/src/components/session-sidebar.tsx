@@ -22,6 +22,7 @@ import {
   SettingsIcon,
   AutomationsIcon,
   BranchIcon,
+  DataControlsIcon,
 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -271,6 +272,17 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
         >
           <AutomationsIcon className="w-4 h-4" />
           Automations
+        </Link>
+        <Link
+          href="/analytics"
+          className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition ${
+            pathname?.startsWith("/analytics")
+              ? "text-foreground bg-muted"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          }`}
+        >
+          <DataControlsIcon className="w-4 h-4" />
+          Analytics
         </Link>
       </div>
 
