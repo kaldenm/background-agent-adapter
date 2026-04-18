@@ -61,6 +61,7 @@ import { reposRoutes } from "./routes/repos";
 import { repoImageRoutes } from "./routes/repo-images";
 import { secretsRoutes } from "./routes/secrets";
 import { automationRoutes } from "./routes/automations";
+import { mcpServerRoutes } from "./routes/mcp-servers";
 import { analyticsRoutes } from "./routes/analytics";
 import { webhookRoutes } from "./webhooks";
 
@@ -540,6 +541,9 @@ const routes: Route[] = [
 
   // Automations
   ...automationRoutes,
+
+  // MCP servers
+  ...mcpServerRoutes,
 
   // Analytics
   ...analyticsRoutes,

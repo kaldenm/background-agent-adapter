@@ -55,6 +55,11 @@ const NAV_ITEMS = [
     label: "Integrations",
     icon: IntegrationsIcon,
   },
+  {
+    id: "mcp-servers",
+    label: "MCP Servers",
+    icon: TerminalIcon,
+  },
 ] as const;
 
 export type SettingsCategory = (typeof NAV_ITEMS)[number]["id"];
