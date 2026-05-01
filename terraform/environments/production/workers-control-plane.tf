@@ -37,12 +37,7 @@ module "control_plane_worker" {
     }
   ]
 
-  r2_buckets = [
-    {
-      binding_name = "MEDIA_BUCKET"
-      bucket_name  = cloudflare_r2_bucket.media.name
-    }
-  ]
+  r2_buckets = []
 
   service_bindings = concat(
     var.enable_slack_bot ? [

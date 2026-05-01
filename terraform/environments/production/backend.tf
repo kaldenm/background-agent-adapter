@@ -17,22 +17,10 @@
 #
 # Then run: terraform init -backend-config=backend.tfvars
 
+# Using local backend for simplicity. State file lives in this directory.
+# Switch back to the S3/R2 backend above for team/CI use.
 terraform {
-  backend "s3" {
-    bucket = "open-inspect-terraform-state"
-    key    = "production/terraform.tfstate"
-    region = "auto"
-
-    # All sensitive/account-specific values passed via -backend-config
-    # endpoints = { s3 = "https://<ACCOUNT_ID>.r2.cloudflarestorage.com" }
-    # access_key = "..."
-    # secret_key = "..."
-
-    # Required for R2 compatibility
-    skip_credentials_validation = true
-    skip_metadata_api_check     = true
-    skip_region_validation      = true
-    skip_requesting_account_id  = true
-    skip_s3_checksum            = true
+  backend "local" {
+    path = "terraform.tfstate"
   }
 }

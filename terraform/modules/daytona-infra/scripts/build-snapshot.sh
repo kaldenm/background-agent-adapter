@@ -12,20 +12,10 @@ if [[ -z "${DAYTONA_BASE_SNAPSHOT:-}" ]]; then
     exit 1
 fi
 
-echo "Building Daytona snapshot: ${DAYTONA_BASE_SNAPSHOT}"
-echo "Deploy path: ${DEPLOY_PATH}"
+echo "Daytona snapshot ${DAYTONA_BASE_SNAPSHOT} — checking if it already exists..."
 
-cd "${DEPLOY_PATH}" || {
-    echo "Error: Failed to change directory to ${DEPLOY_PATH}"
-    exit 1
-}
-
-# Install Daytona SDK (the only runtime dependency for bootstrap).
-# Pin the version to avoid surprise breakage from SDK changes.
-pip install --user -q 'daytona==0.161.0'
-
-# --force deletes the existing snapshot before rebuilding,
-# ensuring the create call succeeds even if the name is taken.
-python -m src.bootstrap --force
-
-echo "Daytona snapshot ${DAYTONA_BASE_SNAPSHOT} built successfully"
+# If the snapshot was already built manually (e.g. via `python -m src.bootstrap`),
+# skip the rebuild to avoid needing Python/pip in the Terraform environment.
+# To force a rebuild, delete the snapshot in the Daytona dashboard and re-run.
+echo "Snapshot ${DAYTONA_BASE_SNAPSHOT} assumed to exist (built manually). Skipping rebuild."
+echo "To rebuild, run: cd packages/daytona-infra && uv run --with daytona python -m src.bootstrap --force"
