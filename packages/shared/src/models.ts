@@ -10,8 +10,6 @@
  * All models use "provider/model" format.
  */
 export const VALID_MODELS = [
-  "anthropic/claude-haiku-4-5",
-  "anthropic/claude-sonnet-4-5",
   "anthropic/claude-sonnet-4-6",
   "anthropic/claude-opus-4-5",
   "anthropic/claude-opus-4-6",
@@ -53,8 +51,6 @@ export interface ModelReasoningConfig {
  * Models not listed here do not support reasoning controls.
  */
 export const MODEL_REASONING_CONFIG: Partial<Record<ValidModel, ModelReasoningConfig>> = {
-  "anthropic/claude-haiku-4-5": { efforts: ["high", "max"], default: "max" },
-  "anthropic/claude-sonnet-4-5": { efforts: ["high", "max"], default: "max" },
   "anthropic/claude-sonnet-4-6": { efforts: ["low", "medium", "high", "max"], default: "high" },
   "anthropic/claude-opus-4-5": { efforts: ["high", "max"], default: "max" },
   "anthropic/claude-opus-4-6": { efforts: ["low", "medium", "high", "max"], default: "high" },
@@ -85,16 +81,6 @@ export const MODEL_OPTIONS: ModelCategory[] = [
   {
     category: "Anthropic",
     models: [
-      {
-        id: "anthropic/claude-haiku-4-5",
-        name: "Claude Haiku 4.5",
-        description: "Fast and efficient",
-      },
-      {
-        id: "anthropic/claude-sonnet-4-5",
-        name: "Claude Sonnet 4.5",
-        description: "Balanced performance",
-      },
       {
         id: "anthropic/claude-sonnet-4-6",
         name: "Claude Sonnet 4.6",
@@ -147,8 +133,6 @@ export const MODEL_OPTIONS: ModelCategory[] = [
  * Excludes zen models which must be opted into via settings.
  */
 export const DEFAULT_ENABLED_MODELS: ValidModel[] = [
-  "anthropic/claude-haiku-4-5",
-  "anthropic/claude-sonnet-4-5",
   "anthropic/claude-sonnet-4-6",
   "anthropic/claude-opus-4-5",
   "anthropic/claude-opus-4-6",
@@ -180,7 +164,6 @@ export function normalizeModelId(modelId: string): string {
 
 /**
  * Check if a model name is valid.
- * Accepts both prefixed ("anthropic/claude-haiku-4-5") and bare ("claude-haiku-4-5") formats.
  */
 export function isValidModel(model: string): model is ValidModel {
   return VALID_MODELS.includes(normalizeModelId(model) as ValidModel);
@@ -224,8 +207,6 @@ export function isValidReasoningEffort(model: string, effort: string): boolean {
  * Normalizes bare Claude model names first, then splits on "/".
  *
  * @example
- * extractProviderAndModel("anthropic/claude-haiku-4-5") // { provider: "anthropic", model: "claude-haiku-4-5" }
- * extractProviderAndModel("claude-haiku-4-5") // { provider: "anthropic", model: "claude-haiku-4-5" }
  * extractProviderAndModel("openai/gpt-5.2-codex") // { provider: "openai", model: "gpt-5.2-codex" }
  */
 export function extractProviderAndModel(modelId: string): { provider: string; model: string } {

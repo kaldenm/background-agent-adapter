@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS session (
   base_sha TEXT,                                    -- SHA of base branch at session start
   current_sha TEXT,                                 -- Current HEAD SHA
   opencode_session_id TEXT,                         -- OpenCode session ID (for 1:1 mapping)
-  model TEXT DEFAULT 'anthropic/claude-haiku-4-5',   -- LLM model to use
+  model TEXT DEFAULT 'anthropic/claude-sonnet-4-6',   -- LLM model to use
   reasoning_effort TEXT,                            -- Session-level reasoning effort default
   status TEXT DEFAULT 'created',                    -- 'created', 'active', 'completed', 'failed', 'archived', 'cancelled'
   parent_session_id TEXT,                           -- Parent session ID (NULL for top-level)
@@ -171,7 +171,7 @@ export const MIGRATIONS: readonly SchemaMigration[] = [
   {
     id: 3,
     description: "Add model to session",
-    run: `ALTER TABLE session ADD COLUMN model TEXT DEFAULT 'anthropic/claude-haiku-4-5'`,
+    run: `ALTER TABLE session ADD COLUMN model TEXT DEFAULT 'anthropic/claude-sonnet-4-6'`,
   },
   {
     id: 4,

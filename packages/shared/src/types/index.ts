@@ -39,6 +39,7 @@ export type EventType =
   | "artifact"
   | "push_complete"
   | "push_error"
+  | "snapshot_ready"
   | "user_message";
 export type ParticipantRole = "owner" | "member";
 export type SpawnSource =
@@ -252,6 +253,12 @@ export type SandboxEvent =
       type: "push_error";
       branchName: string;
       error: string;
+      sandboxId?: string;
+      timestamp: number;
+    }
+  | {
+      type: "snapshot_ready";
+      agentSessionId?: string;
       sandboxId?: string;
       timestamp: number;
     }
