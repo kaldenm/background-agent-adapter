@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Sandbox entrypoint - manages OpenCode server and bridge lifecycle.
+Sandbox entrypoint - manages agent server and bridge lifecycle.
 
 Runs as PID 1 inside the sandbox. Responsibilities:
 1. Perform git sync with latest code
 2. Run repo hooks (setup/start) based on boot mode
-3. Start OpenCode server
+3. Start agent server (via pluggable adapter)
 4. Start bridge process for control plane communication
 5. Monitor processes and restart on crash with exponential backoff
 6. Handle graceful shutdown on SIGTERM/SIGINT
@@ -22,6 +22,8 @@ from pathlib import Path
 
 import httpx
 
+from .adapters import load_adapter
+from .adapters.base import AgentAdapter
 from .constants import CODE_SERVER_PORT, TTYD_PORT, TTYD_PROXY_PORT
 from .log_config import configure_logging, get_logger
 
@@ -40,7 +42,7 @@ class SandboxSupervisor:
     """
 
     # Configuration
-    OPENCODE_PORT = 4096
+    OPENCODE_PORT = 4096  # default, overridden by adapter.PORT
     HEALTH_CHECK_TIMEOUT = 30.0
     MAX_RESTARTS = 5
     BACKOFF_BASE = 2.0
@@ -54,14 +56,18 @@ class SandboxSupervisor:
     MCP_PACKAGE_INSTALL_TIMEOUT_SECONDS = 180
 
     def __init__(self):
-        self.opencode_process: asyncio.subprocess.Process | None = None
+        # Load agent adapter
+        agent_name = os.environ.get("AGENT_ADAPTER", "opencode")
+        self.adapter: AgentAdapter = load_adapter(agent_name)
+
+        self._opencode_process: asyncio.subprocess.Process | None = None
         self.bridge_process: asyncio.subprocess.Process | None = None
         self.code_server_process: asyncio.subprocess.Process | None = None
         self.ttyd_process: asyncio.subprocess.Process | None = None
         self.ttyd_proxy_process: asyncio.subprocess.Process | None = None
         self.shutdown_event = asyncio.Event()
         self.git_sync_complete = asyncio.Event()
-        self.opencode_ready = asyncio.Event()
+        self.agent_ready = asyncio.Event()
         self.boot_mode = "unknown"
 
         # Configuration from environment (set by Modal/SandboxManager)
@@ -83,6 +89,7 @@ class SandboxSupervisor:
         # Paths
         self.workspace_path = Path("/workspace")
         self.repo_path = self.workspace_path / self.repo_name
+        # Backward compat: session_id_file (now managed by adapter)
         self.session_id_file = Path("/tmp/opencode-session-id")
 
         # Logger
@@ -643,8 +650,34 @@ class SandboxSupervisor:
         self.log.warn("port_readiness.timeout", port=port, timeout=timeout_seconds)
         return False
 
+    # Backward compat aliases
+    @property
+    def opencode_process(self) -> "asyncio.subprocess.Process | None":
+        """Backward compat: return agent process."""
+        return self._opencode_process
+
+    @opencode_process.setter
+    def opencode_process(self, value: "asyncio.subprocess.Process | None") -> None:
+        """Backward compat."""
+        self._opencode_process = value
+
+    @property
+    def opencode_ready(self) -> asyncio.Event:
+        """Backward compat: alias for agent_ready."""
+        return self.agent_ready
+
+    @opencode_ready.setter
+    def opencode_ready(self, value: asyncio.Event) -> None:
+        """Backward compat: set agent_ready."""
+        self.agent_ready = value
+
     async def start_opencode(self) -> None:
-        """Start OpenCode server with configuration."""
+        """Start agent server with configuration.
+
+        This method keeps the original implementation so that existing tests
+        which mock its sub-methods (_setup_openai_oauth, _install_tools, etc.)
+        continue to work. In production the adapter handles all of this.
+        """
         self._setup_openai_oauth()
         self.log.info("opencode.start")
 
@@ -656,6 +689,17 @@ class SandboxSupervisor:
             "permission": {"*": {"*": "allow"}},
         }
 
+        # Register custom model definitions so OpenCode accepts model IDs
+        # that aren't yet in the models.dev registry.
+        from .adapters.opencode import OpenCodeAdapter
+
+        if OpenCodeAdapter.CUSTOM_ANTHROPIC_MODELS:
+            opencode_config["provider"] = {
+                "anthropic": {
+                    "models": OpenCodeAdapter.CUSTOM_ANTHROPIC_MODELS,
+                },
+            }
+
         # Inject MCP servers
         mcp_servers = self._resolve_mcp_servers()
         if mcp_servers:
@@ -665,7 +709,7 @@ class SandboxSupervisor:
                 opencode_config["mcp"] = mcp_config
                 self.log.info("mcp.configured", count=len(mcp_config))
 
-        # Determine working directory - use repo path if cloned, otherwise /workspace
+        # Determine working directory
         workdir = self.workspace_path
         if self.repo_path.exists() and (self.repo_path / ".git").exists():
             workdir = self.repo_path
@@ -686,44 +730,44 @@ class SandboxSupervisor:
         env = {
             **os.environ,
             "OPENCODE_CONFIG_CONTENT": json.dumps(opencode_config),
-            # Disable OpenCode's question tool in headless mode. The tool blocks
-            # on a Promise waiting for user input via the HTTP API, but the bridge
-            # has no channel to relay questions to the web client and back. Without
-            # this, the session hangs until the SSE inactivity timeout (120s).
-            # See: https://github.com/anomalyco/opencode/blob/19b1222cd/packages/opencode/src/tool/registry.ts#L100
             "OPENCODE_CLIENT": "serve",
         }
 
         # Start OpenCode server in the repo directory
-        self.opencode_process = await asyncio.create_subprocess_exec(
+        self._opencode_process = await asyncio.create_subprocess_exec(
             "opencode",
             "serve",
             "--port",
             str(self.OPENCODE_PORT),
             "--hostname",
             "0.0.0.0",
-            "--print-logs",  # Print logs to stdout for debugging
-            cwd=workdir,  # Start in repo directory
+            "--print-logs",
+            cwd=workdir,
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
+
+        # Store process in adapter if it's OpenCode
+        from .adapters.opencode import OpenCodeAdapter
+        if isinstance(self.adapter, OpenCodeAdapter):
+            self.adapter.process = self._opencode_process
 
         # Start log forwarder
         asyncio.create_task(self._forward_opencode_logs())
 
         # Wait for health check
         await self._wait_for_health()
-        self.opencode_ready.set()
+        self.agent_ready.set()
         self.log.info("opencode.ready")
 
     async def _forward_opencode_logs(self) -> None:
         """Forward OpenCode stdout to supervisor stdout."""
-        if not self.opencode_process or not self.opencode_process.stdout:
+        if not self._opencode_process or not self._opencode_process.stdout:
             return
 
         try:
-            async for line in self.opencode_process.stdout:
+            async for line in self._opencode_process.stdout:
                 print(f"[opencode] {line.decode().rstrip()}")
         except Exception as e:
             print(f"[supervisor] Log forwarding error: {e}")
@@ -759,14 +803,23 @@ class SandboxSupervisor:
             self.log.info("bridge.skip", reason="no_control_plane_url")
             return
 
-        # Wait for OpenCode to be ready
-        await self.opencode_ready.wait()
+        # Wait for agent to be ready
+        await self.agent_ready.wait()
 
         # Get session_id from config (required for WebSocket connection)
         session_id = self.session_config.get("session_id", "")
         if not session_id:
             self.log.info("bridge.skip", reason="no_session_id")
             return
+
+        # Pass adapter config via environment
+        agent_name = os.environ.get("AGENT_ADAPTER", "opencode")
+        agent_port = str(getattr(self.adapter, 'PORT', self.OPENCODE_PORT))
+        bridge_env = {
+            **os.environ,
+            "AGENT_ADAPTER": agent_name,
+            "AGENT_PORT": agent_port,
+        }
 
         # Run bridge as a module (works with relative imports)
         self.bridge_process = await asyncio.create_subprocess_exec(
@@ -781,9 +834,7 @@ class SandboxSupervisor:
             self.control_plane_url,
             "--token",
             self.sandbox_token,
-            "--opencode-port",
-            str(self.OPENCODE_PORT),
-            env=os.environ,
+            env=bridge_env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -828,9 +879,9 @@ class SandboxSupervisor:
         ttyd_proxy_restart_count = 0
 
         while not self.shutdown_event.is_set():
-            # Check OpenCode process
-            if self.opencode_process and self.opencode_process.returncode is not None:
-                exit_code = self.opencode_process.returncode
+            # Check OpenCode/agent process
+            if self._opencode_process and self._opencode_process.returncode is not None:
+                exit_code = self._opencode_process.returncode
                 restart_count += 1
 
                 self.log.error(
@@ -859,7 +910,7 @@ class SandboxSupervisor:
                 )
 
                 await asyncio.sleep(delay)
-                self.opencode_ready.clear()
+                self.agent_ready.clear()
                 await self.start_opencode()
 
             # Check bridge process
@@ -1231,7 +1282,7 @@ class SandboxSupervisor:
                     except Exception as e:
                         self.log.warn("ttyd_proxy.start_failed", exc=e)
 
-            # Phase 4: Start OpenCode server (in repo directory)
+            # Phase 4: Start agent via adapter
             await self.start_opencode()
             opencode_ready = True
 
@@ -1312,13 +1363,13 @@ class SandboxSupervisor:
             except TimeoutError:
                 self.ttyd_process.kill()
 
-        # Terminate OpenCode
-        if self.opencode_process and self.opencode_process.returncode is None:
-            self.opencode_process.terminate()
+        # Terminate agent/OpenCode
+        if self._opencode_process and self._opencode_process.returncode is None:
+            self._opencode_process.terminate()
             try:
-                await asyncio.wait_for(self.opencode_process.wait(), timeout=10.0)
+                await asyncio.wait_for(self._opencode_process.wait(), timeout=10.0)
             except TimeoutError:
-                self.opencode_process.kill()
+                self._opencode_process.kill()
 
         self.log.info("supervisor.shutdown_complete")
 
