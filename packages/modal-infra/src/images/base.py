@@ -33,8 +33,8 @@ TTYD_VERSION = "1.7.7"
 TTYD_SHA256 = "8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55"
 
 # Cache buster - change this to force Modal image rebuild
-# v48: refresh sandbox image for Claude Opus 4.7 support
-CACHE_BUSTER = "v48-opus-4-7"
+# v49: register custom model definitions in OpenCode config (fixes Model not found errors)
+CACHE_BUSTER = "v49-custom-model-defs"
 
 # Base image with all development tools
 base_image = (
