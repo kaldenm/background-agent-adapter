@@ -263,6 +263,14 @@ export type SandboxEvent =
       timestamp: number;
     }
   | {
+      type: "agent_status";
+      status: string;
+      message?: string;
+      adapter?: string;
+      sandboxId?: string;
+      timestamp: number;
+    }
+  | {
       type: "user_message";
       content: string;
       messageId: string;

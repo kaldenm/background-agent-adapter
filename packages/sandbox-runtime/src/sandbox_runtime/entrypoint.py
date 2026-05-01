@@ -678,6 +678,19 @@ class SandboxSupervisor:
         which mock its sub-methods (_setup_openai_oauth, _install_tools, etc.)
         continue to work. In production the adapter handles all of this.
         """
+        from .adapters.opencode import OpenCodeAdapter
+
+        # For non-OpenCode adapters, use the generic adapter interface
+        if not isinstance(self.adapter, OpenCodeAdapter):
+            workdir = self.workspace_path
+            if self.repo_path.exists() and (self.repo_path / ".git").exists():
+                workdir = self.repo_path
+            await self.adapter.install(workdir, self.session_config)
+            await self.adapter.start(workdir, self.session_config)
+            self.agent_ready.set()
+            self.log.info("agent.ready", adapter=type(self.adapter).__name__)
+            return
+
         self._setup_openai_oauth()
         self.log.info("opencode.start")
 
@@ -879,9 +892,10 @@ class SandboxSupervisor:
         ttyd_proxy_restart_count = 0
 
         while not self.shutdown_event.is_set():
-            # Check OpenCode/agent process
-            if self._opencode_process and self._opencode_process.returncode is not None:
-                exit_code = self._opencode_process.returncode
+            # Check OpenCode/agent process (only for adapters that run in entrypoint)
+            agent_process = self._opencode_process or self.adapter.get_process()
+            if agent_process and agent_process.returncode is not None:
+                exit_code = agent_process.returncode
                 restart_count += 1
 
                 self.log.error(
@@ -896,7 +910,7 @@ class SandboxSupervisor:
                         restart_count=restart_count,
                     )
                     await self._report_fatal_error(
-                        f"OpenCode crashed {restart_count} times, giving up"
+                        f"Agent crashed {restart_count} times, giving up"
                     )
                     self.shutdown_event.set()
                     break

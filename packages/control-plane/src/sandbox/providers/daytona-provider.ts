@@ -216,6 +216,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       REPO_OWNER: config.repoOwner,
       REPO_NAME: config.repoName,
       SESSION_CONFIG: JSON.stringify(sessionConfig),
+      AGENT_ADAPTER: "pi",
     });
 
     if (config.codeServerEnabled) {

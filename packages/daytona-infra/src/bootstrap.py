@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from daytona import Daytona, DaytonaConfig, DaytonaNotFoundError
+from daytona_sdk import Daytona, DaytonaConfig, DaytonaNotFoundError
 
 from .config import load_config
 from .toolchain import create_base_snapshot

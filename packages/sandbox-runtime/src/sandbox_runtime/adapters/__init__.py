@@ -25,6 +25,10 @@ def load_adapter(name: str) -> AgentAdapter:
         from .opencode import OpenCodeAdapter
 
         return OpenCodeAdapter()
+    if name == "pi":
+        from .pi import PiAdapter
+
+        return PiAdapter()
     raise ValueError(f"Unknown agent adapter: {name}")
 
 
