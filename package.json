@@ -38,7 +38,8 @@
   },
   "overrides": {
     "minimatch": "^10.2.4",
-    "undici": "^7.24.0"
+    "undici": "^7.24.0",
+    "cloudflare": "^6.0.0"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
