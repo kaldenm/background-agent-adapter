@@ -101,7 +101,7 @@ class TestTranslateEvent:
         self.msg_id = "msg_123"
 
     def test_turn_start(self):
-        result = self.adapter._translate_event({"type": "turn_start"}, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard({"type": "turn_start"}, self.msg_id)
         assert result == {"type": "step_start", "messageId": "msg_123"}
 
     def test_turn_end_with_usage(self):
@@ -117,7 +117,7 @@ class TestTranslateEvent:
                 }
             },
         }
-        result = self.adapter._translate_event(event, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard(event, self.msg_id)
         assert result["type"] == "step_finish"
         assert result["messageId"] == "msg_123"
         assert result["cost"] == 0.003
@@ -130,7 +130,7 @@ class TestTranslateEvent:
             "message": {},
             "assistantMessageEvent": {"type": "text_delta", "delta": "Hello", "contentIndex": 0},
         }
-        result = self.adapter._translate_event(event, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard(event, self.msg_id)
         assert result == {"type": "token", "content": "Hello", "messageId": "msg_123"}
 
     def test_thinking_delta_dropped(self):
@@ -139,7 +139,7 @@ class TestTranslateEvent:
             "message": {},
             "assistantMessageEvent": {"type": "thinking_delta", "delta": "Let me think..."},
         }
-        result = self.adapter._translate_event(event, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard(event, self.msg_id)
         assert result is None
 
     def test_tool_execution_start(self):
@@ -149,7 +149,7 @@ class TestTranslateEvent:
             "toolName": "bash",
             "args": {"command": "ls"},
         }
-        result = self.adapter._translate_event(event, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard(event, self.msg_id)
         assert result["type"] == "tool_call"
         assert result["tool"] == "bash"
         assert result["status"] == "running"
@@ -164,7 +164,7 @@ class TestTranslateEvent:
             "args": {"command": "ls"},
             "partialResult": {"content": [{"type": "text", "text": "file1.py\n"}]},
         }
-        result = self.adapter._translate_event(event, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard(event, self.msg_id)
         assert result["type"] == "tool_call"
         assert result["status"] == "running"
         assert result["output"] == "file1.py\n"
@@ -177,7 +177,7 @@ class TestTranslateEvent:
             "result": {"content": [{"type": "text", "text": "file1.py\nfile2.py"}]},
             "isError": False,
         }
-        result = self.adapter._translate_event(event, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard(event, self.msg_id)
         assert result["type"] == "tool_call"
         assert result["status"] == "completed"
         assert result["output"] == "file1.py\nfile2.py"
@@ -190,16 +190,16 @@ class TestTranslateEvent:
             "result": {"content": [{"type": "text", "text": "command not found"}]},
             "isError": True,
         }
-        result = self.adapter._translate_event(event, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard(event, self.msg_id)
         assert result["status"] == "error"
         assert result["output"] == "command not found"
 
     def test_agent_start_dropped(self):
-        result = self.adapter._translate_event({"type": "agent_start"}, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard({"type": "agent_start"}, self.msg_id)
         assert result is None
 
     def test_compaction_dropped(self):
-        result = self.adapter._translate_event({"type": "compaction_start"}, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard({"type": "compaction_start"}, self.msg_id)
         assert result is None
 
     def test_auto_retry_end_failure(self):
@@ -209,13 +209,13 @@ class TestTranslateEvent:
             "attempt": 3,
             "finalError": "529 overloaded",
         }
-        result = self.adapter._translate_event(event, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard(event, self.msg_id)
         assert result["type"] == "error"
         assert "529 overloaded" in result["error"]
 
     def test_auto_retry_end_success_dropped(self):
         event = {"type": "auto_retry_end", "success": True, "attempt": 2}
-        result = self.adapter._translate_event(event, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard(event, self.msg_id)
         assert result is None
 
     def test_message_update_error(self):
@@ -224,7 +224,7 @@ class TestTranslateEvent:
             "message": {},
             "assistantMessageEvent": {"type": "error", "reason": "aborted"},
         }
-        result = self.adapter._translate_event(event, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard(event, self.msg_id)
         assert result["type"] == "error"
         assert "aborted" in result["error"]
 
@@ -247,7 +247,7 @@ class TestExtensionUI:
 
     @pytest.mark.asyncio
     async def test_confirm_auto_approves(self):
-        await self.adapter._handle_extension_ui(
+        await self.adapter._auto_respond_to_dialog(
             {"type": "extension_ui_request", "id": "uuid-1", "method": "confirm", "title": "Delete?"}
         )
         assert len(self.written) == 1
@@ -256,7 +256,7 @@ class TestExtensionUI:
 
     @pytest.mark.asyncio
     async def test_select_picks_first(self):
-        await self.adapter._handle_extension_ui(
+        await self.adapter._auto_respond_to_dialog(
             {
                 "type": "extension_ui_request",
                 "id": "uuid-2",
@@ -269,28 +269,28 @@ class TestExtensionUI:
 
     @pytest.mark.asyncio
     async def test_input_cancels(self):
-        await self.adapter._handle_extension_ui(
+        await self.adapter._auto_respond_to_dialog(
             {"type": "extension_ui_request", "id": "uuid-3", "method": "input", "title": "Enter"}
         )
         assert self.written[0]["cancelled"] is True
 
     @pytest.mark.asyncio
     async def test_editor_cancels(self):
-        await self.adapter._handle_extension_ui(
+        await self.adapter._auto_respond_to_dialog(
             {"type": "extension_ui_request", "id": "uuid-4", "method": "editor", "title": "Edit"}
         )
         assert self.written[0]["cancelled"] is True
 
     @pytest.mark.asyncio
     async def test_notify_ignored(self):
-        await self.adapter._handle_extension_ui(
+        await self.adapter._auto_respond_to_dialog(
             {"type": "extension_ui_request", "id": "uuid-5", "method": "notify", "message": "hi"}
         )
         assert len(self.written) == 0
 
     @pytest.mark.asyncio
     async def test_set_status_ignored(self):
-        await self.adapter._handle_extension_ui(
+        await self.adapter._auto_respond_to_dialog(
             {
                 "type": "extension_ui_request",
                 "id": "uuid-6",
@@ -524,7 +524,7 @@ async def test_send_prompt_emits_lifecycle_status_events():
     adapter._process.stdin.drain = AsyncMock()
     adapter._process.stdin.is_closing = MagicMock(return_value=False)
 
-    # Queue lifecycle status events (normally queued during create_session)
+    # Queue lifecycle status events (normally queued during ensure_session)
     adapter._pending_status = [
         {"type": "agent_status", "status": "spawning", "message": "Starting Pi", "adapter": "pi"},
         {"type": "agent_status", "status": "ready", "message": "Pi ready", "adapter": "pi"},

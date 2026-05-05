@@ -18,7 +18,7 @@ def bridge() -> AgentBridge:
         control_plane_url="http://localhost:8787",
         auth_token="test-token",
     )
-    b.opencode_session_id = "oc-session-123"
+    b._session_id = "oc-session-123"
     return b
 
 
@@ -29,7 +29,7 @@ class TestGitIdentityConfiguration:
     async def test_uses_author_identity_when_provided(self, bridge: AgentBridge):
         """Should use scmName/scmEmail from the prompt author when both are present."""
         bridge._configure_git_identity = AsyncMock()
-        bridge._stream_opencode_response_sse = AsyncMock(
+        bridge.adapter.send_prompt = AsyncMock(
             return_value=AsyncMock(
                 __aiter__=lambda s: s, __anext__=AsyncMock(side_effect=StopAsyncIteration)
             )
@@ -58,7 +58,7 @@ class TestGitIdentityConfiguration:
     async def test_falls_back_when_both_missing(self, bridge: AgentBridge):
         """Should use fallback identity when both scmName and scmEmail are null."""
         bridge._configure_git_identity = AsyncMock()
-        bridge._stream_opencode_response_sse = AsyncMock(
+        bridge.adapter.send_prompt = AsyncMock(
             return_value=AsyncMock(
                 __aiter__=lambda s: s, __anext__=AsyncMock(side_effect=StopAsyncIteration)
             )
@@ -87,7 +87,7 @@ class TestGitIdentityConfiguration:
     async def test_falls_back_email_when_only_email_missing(self, bridge: AgentBridge):
         """Should use fallback email when scmEmail is null but scmName is present."""
         bridge._configure_git_identity = AsyncMock()
-        bridge._stream_opencode_response_sse = AsyncMock(
+        bridge.adapter.send_prompt = AsyncMock(
             return_value=AsyncMock(
                 __aiter__=lambda s: s, __anext__=AsyncMock(side_effect=StopAsyncIteration)
             )
@@ -116,7 +116,7 @@ class TestGitIdentityConfiguration:
     async def test_falls_back_name_when_only_name_missing(self, bridge: AgentBridge):
         """Should use fallback name when scmName is null but scmEmail is present."""
         bridge._configure_git_identity = AsyncMock()
-        bridge._stream_opencode_response_sse = AsyncMock(
+        bridge.adapter.send_prompt = AsyncMock(
             return_value=AsyncMock(
                 __aiter__=lambda s: s, __anext__=AsyncMock(side_effect=StopAsyncIteration)
             )
@@ -145,7 +145,7 @@ class TestGitIdentityConfiguration:
     async def test_falls_back_when_no_author_data(self, bridge: AgentBridge):
         """Should use fallback identity when author dict has no SCM fields."""
         bridge._configure_git_identity = AsyncMock()
-        bridge._stream_opencode_response_sse = AsyncMock(
+        bridge.adapter.send_prompt = AsyncMock(
             return_value=AsyncMock(
                 __aiter__=lambda s: s, __anext__=AsyncMock(side_effect=StopAsyncIteration)
             )

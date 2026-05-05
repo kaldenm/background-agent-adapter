@@ -52,6 +52,8 @@ class PiAdapter(AgentAdapter):
         self._session_config: dict = {}
 
         # Concurrency controls (initialized in configure)
+        # Pi sends both streaming events AND command responses on the same stdout pipe.
+        # Two queues separate them so commands don't get stuck behind streaming events.
         self._stdin_lock: asyncio.Lock | None = None
         self._event_queue: asyncio.Queue[dict[str, Any]] | None = None
         self._response_queue: asyncio.Queue[dict[str, Any]] | None = None
@@ -93,7 +95,12 @@ class PiAdapter(AgentAdapter):
         self.log.info("pi.install_complete", workdir=str(workdir))
 
     async def start(self, workdir: Path, session_config: dict) -> None:
-        """Validate Pi binary exists. Actual spawn happens in configure() (bridge process)."""
+        """Validate Pi binary exists. Does NOT actually start Pi.
+
+        Pi is spawned later in ensure_session() because it needs to know
+        whether to resume or start fresh (which depends on load_session_id
+        running first). This method just confirms the binary is installed.
+        """
         self._workdir = workdir
         self._session_config = session_config
         self._provider = session_config.get("provider", "anthropic")
@@ -124,12 +131,16 @@ class PiAdapter(AgentAdapter):
 
     # ─────────────────────────────────────────────────────────────────────
     # Bridge subprocess methods (agent communication)
+    # The bridge never sees Pi's raw stdout — only clean standard events
+    # (token, tool_call, etc.) that come out of send_prompt(). All the dirty
+    # work of reading pipes, matching command IDs, sorting queues happens here
+    # in the adapter, invisible to the bridge.
     # ─────────────────────────────────────────────────────────────────────
 
     def configure(self, http_client: httpx.AsyncClient, port: int) -> None:
         """Initialize for bridge communication. Pi ignores http_client and port.
 
-        Pi subprocess is spawned lazily on first create_session() call,
+        Pi subprocess is spawned lazily on first ensure_session() call,
         because we need to know if there's a session to restore first
         (load_session_id runs after configure in the bridge).
         """
@@ -150,8 +161,13 @@ class PiAdapter(AgentAdapter):
         self._event_queue = asyncio.Queue()
         self._response_queue = asyncio.Queue()
 
-    async def create_session(self, repo_path: str) -> str:
-        """Spawn Pi if needed, return session ID."""
+    async def ensure_session(self, repo_path: str) -> str:
+        """Spawn Pi if needed, return session ID.
+
+        May resume an existing session (if load_session_id found one on disk)
+        or create a fresh one. The bridge doesn't care which — it just wants
+        a session ID back.
+        """
         if not self._process or self._process.returncode is not None:
             self.log.info("pi.creating_session", repo_path=repo_path)
             self._pending_status.append(
@@ -193,11 +209,17 @@ class PiAdapter(AgentAdapter):
 
         MUST NOT yield execution_complete — the bridge handles that.
         """
-        # Drain any lifecycle status events queued during create_session/spawn
+        # Drain any lifecycle status events queued during ensure_session/spawn.
+        # These happened BEFORE the prompt, but ensure_session() returns a string
+        # (not a stream), so this is the first chance to emit them. The user sees
+        # them in order (spawning → ready → prompting) so it looks correct in the UI.
         while self._pending_status:
             yield self._pending_status.pop(0)
 
-        # Emit agent_status so web UI can show Pi is working
+        # Emit agent_status so web UI can show Pi is working.
+        # Status events are NOT one of the 5 core event types (token, tool_call, etc.)
+        # — they're a bonus type the bridge passes through without validating.
+        # No translation needed; they're created directly in the standard format.
         yield self._make_status_event("prompting", f"Sending prompt to Pi ({self._model})")
         # Switch model if requested
         if model:
@@ -372,7 +394,11 @@ class PiAdapter(AgentAdapter):
     # ─────────────────────────────────────────────────────────────────────
 
     async def _write_stdin(self, cmd: dict[str, Any]) -> None:
-        """Write a JSON command to Pi's stdin. Lock prevents interleaved writes."""
+        """Write a JSON command to Pi's stdin.
+
+        Lock prevents interleaved writes — without it, two concurrent writes
+        (e.g. a prompt and an abort) could garble each other's JSON lines.
+        """
         if not self._process or not self._process.stdin:
             raise BrokenPipeError("Pi process not running")
 
@@ -382,7 +408,22 @@ class PiAdapter(AgentAdapter):
             await self._process.stdin.drain()
 
     async def _send_command(self, cmd: dict[str, Any]) -> dict[str, Any]:
-        """Send a command and wait for its response."""
+        """Send an internal control command to Pi and wait for its response.
+
+        Commands are NOT prompts. They're short admin messages the adapter sends
+        to configure Pi before/during work: "change model", "get state",
+        "set thinking level", "new session". The user never sees these.
+
+        Why the adapter handles model changes: because the bridge doesn't know
+        HOW to tell Pi to change models (it's Pi-specific protocol). The bridge
+        just passes model/reasoning_effort to send_prompt(), and the adapter
+        translates that into the right commands for this specific agent.
+
+        Pi's RPC protocol: each command gets a unique ID. Responses come back
+        with the same ID. We wait on _response_queue and keep checking: is this
+        response's ID my ID? If not, put it back for someone else. When we find
+        our match, return it.
+        """
         req_id = f"req-{uuid.uuid4().hex[:8]}"
         cmd_with_id = {**cmd, "id": req_id}
         await self._write_stdin(cmd_with_id)
@@ -407,7 +448,13 @@ class PiAdapter(AgentAdapter):
             await asyncio.sleep(0.001)
 
     async def _read_stdout(self) -> None:
-        """Read JSONL from Pi's stdout, route to appropriate queue."""
+        """Read JSONL from Pi's stdout, route to appropriate queue.
+
+        Runs as a background task. Every line Pi writes to stdout gets parsed
+        and sorted: 'response' type → _response_queue (for _send_command),
+        'extension_ui_request' → auto-approve, everything else → _event_queue
+        (for send_prompt to yield as translated events).
+        """
         if not self._process or not self._process.stdout:
             return
 
@@ -437,7 +484,7 @@ class PiAdapter(AgentAdapter):
                         await self._response_queue.put(event)
                     elif event_type == "extension_ui_request":
                         # Auto-approve in background — don't block the reader
-                        asyncio.create_task(self._handle_extension_ui(event))
+                        asyncio.create_task(self._auto_respond_to_dialog(event))
                     else:
                         await self._event_queue.put(event)
 
@@ -494,12 +541,17 @@ class PiAdapter(AgentAdapter):
                 return
 
             # Translate and yield
-            bridge_event = self._translate_event(event, message_id)
+            bridge_event = self._convert_pi_event_to_standard(event, message_id)
             if bridge_event:
                 yield bridge_event
 
-    def _translate_event(self, event: dict[str, Any], message_id: str) -> dict[str, Any] | None:
-        """Translate a Pi RPC event to a bridge event."""
+    def _convert_pi_event_to_standard(self, event: dict[str, Any], message_id: str) -> dict[str, Any] | None:
+        """Convert a Pi-native event to a standard bridge event (or None to drop).
+
+        Pi emits ~15 event types. The control plane only understands 5.
+        If the event carries info the user/control plane needs, convert it.
+        If not, return None and it gets silently dropped.
+        """
         event_type = event.get("type")
 
         if event_type == "turn_start":
@@ -595,8 +647,16 @@ class PiAdapter(AgentAdapter):
     # Internal: Extension UI auto-approve
     # ─────────────────────────────────────────────────────────────────────
 
-    async def _handle_extension_ui(self, request: dict[str, Any]) -> None:
-        """Auto-approve all extension UI requests. Sandbox is isolated."""
+    async def _auto_respond_to_dialog(self, request: dict[str, Any]) -> None:
+        """Auto-respond to Pi's dialog popups so it doesn't hang.
+
+        Pi extensions can ask questions (confirm, select, input). In a normal
+        terminal, a human answers. In a sandbox there's no human — if nobody
+        responds, Pi hangs forever. So we auto-respond:
+        - confirm → yes
+        - select → pick first option
+        - input/editor → cancel (can't fake meaningful text)
+        """
         method = request.get("method")
         req_id = request.get("id")
 

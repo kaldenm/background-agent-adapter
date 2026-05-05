@@ -284,8 +284,8 @@ class OpenCodeAdapter(AgentAdapter):
             except ValueError:
                 pass
 
-    async def create_session(self, repo_path: str) -> str:
-        """Create a new OpenCode session."""
+    async def ensure_session(self, repo_path: str) -> str:
+        """Create a new OpenCode session (OpenCode always creates fresh)."""
         if not self.http_client:
             raise RuntimeError("HTTP client not initialized")
 

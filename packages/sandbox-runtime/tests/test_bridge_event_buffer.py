@@ -80,7 +80,7 @@ def bridge() -> AgentBridge:
         control_plane_url="http://localhost:8787",
         auth_token="test-token",
     )
-    bridge.opencode_session_id = "oc-session-123"
+    bridge._session_id = "oc-session-123"
     bridge.http_client = MockHttpClient()
     return bridge
 

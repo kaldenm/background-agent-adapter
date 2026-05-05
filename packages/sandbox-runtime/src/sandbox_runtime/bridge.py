@@ -28,7 +28,6 @@ from websockets import ClientConnection, State
 from websockets.exceptions import InvalidStatus
 
 from .adapters import AgentAdapter, load_adapter
-from .adapters.opencode import OpenCodeAdapter, OpenCodeIdentifier  # noqa: F401 — backward compat
 from .log_config import configure_logging, get_logger
 from .types import GitUser
 
@@ -50,7 +49,11 @@ class SessionTerminatedError(Exception):
     pass
 
 
-# Event validation: ensure adapter events have required fields
+# [ADAPTER CHANGE] Event validation: guard against bad adapter events.
+# Before the adapter layer, events came from OpenCode code inside this file —
+# correctness was visible by reading the same file. Now events come from an
+# external adapter anyone could write, so we validate before sending to the
+# control plane.
 REQUIRED_EVENT_FIELDS: dict[str, list[str]] = {
     "token": ["content", "messageId"],
     "tool_call": ["tool", "status", "messageId"],
@@ -70,6 +73,28 @@ class AgentBridge:
     - Event streaming from agent adapter to control plane
     - Command handling (prompt, stop, snapshot, shutdown)
     - Git identity management per prompt author
+
+    Adapter call order (the bridge controls this sequence):
+
+        BOOT:
+        1. adapter.configure(http_client, port)  ← give adapter tools to talk to agent
+        2. adapter.load_session_id()             ← check disk for previous session
+
+        FIRST PROMPT:
+        3. adapter.ensure_session(repo_path)     ← create or resume a session
+        4. adapter.send_prompt(...)              ← send prompt, stream events back
+
+        SUBSEQUENT PROMPTS:
+        4. adapter.send_prompt(...)              ← reuse existing session
+
+        USER CANCELS:
+        5. adapter.stop(session_id)              ← tell agent to abort
+
+        SNAPSHOT:
+        6. adapter.get_session_id_for_snapshot() ← save session ID in snapshot metadata
+
+    The bridge doesn't know what agent it's talking to. It just calls these
+    methods in order and forwards the events to the control plane.
     """
 
     HEARTBEAT_INTERVAL = 30.0
@@ -97,21 +122,16 @@ class AgentBridge:
         control_plane_url: str,
         auth_token: str,
         adapter: AgentAdapter | None = None,
-        opencode_port: int = 4096,
     ):
         self.sandbox_id = sandbox_id
         self.session_id = session_id
         self.control_plane_url = control_plane_url
         self.auth_token = auth_token
 
-        # If no adapter provided, default to OpenCode for backward compat
         if adapter is None:
+            from .adapters.opencode import OpenCodeAdapter
             adapter = OpenCodeAdapter()
         self.adapter = adapter
-
-        # Backward compat: expose opencode_port
-        self.opencode_port = opencode_port
-        self.opencode_base_url = f"http://localhost:{opencode_port}"
 
         # Logger
         self.log = get_logger(
@@ -129,9 +149,6 @@ class AgentBridge:
         self._session_id: str | None = None
         self.repo_path = Path("/workspace")
 
-        # Backward compat: session_id_file
-        self.session_id_file = self.adapter._session_id_file if isinstance(self.adapter, OpenCodeAdapter) else None
-
         # HTTP client for agent API
         self.http_client: httpx.AsyncClient | None = None
 
@@ -144,137 +161,6 @@ class AgentBridge:
         # Pending ACKs: events sent but not yet acknowledged by the control plane.
         # Keyed by ackId, re-sent on reconnect until the DO confirms receipt.
         self._pending_acks: dict[str, dict[str, Any]] = {}
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Backward compatibility properties/methods
-    # Tests and existing code may still access these directly.
-    # ───────────────���───────────────────────────────────────────────────���─
-
-    @property
-    def opencode_session_id(self) -> str | None:
-        """Backward compat: delegates to adapter._session_id."""
-        return self._session_id
-
-    @opencode_session_id.setter
-    def opencode_session_id(self, value: str | None) -> None:
-        """Backward compat: sets both bridge._session_id and adapter._session_id."""
-        self._session_id = value
-        if isinstance(self.adapter, OpenCodeAdapter):
-            self.adapter._session_id = value
-
-    def _sync_adapter_http_client(self) -> None:
-        """Ensure adapter has access to the bridge's http_client."""
-        if isinstance(self.adapter, OpenCodeAdapter) and self.http_client:
-            if self.adapter.http_client is not self.http_client:
-                self.adapter.http_client = self.http_client
-                self.adapter.base_url = self.opencode_base_url
-
-    @property
-    def sse_inactivity_timeout(self) -> float:
-        """Backward compat: delegates to adapter."""
-        if isinstance(self.adapter, OpenCodeAdapter):
-            return self.adapter._sse_inactivity_timeout
-        return 120.0
-
-    @sse_inactivity_timeout.setter
-    def sse_inactivity_timeout(self, value: float) -> None:
-        """Backward compat: sets adapter timeout."""
-        if isinstance(self.adapter, OpenCodeAdapter):
-            self.adapter._sse_inactivity_timeout = value
-
-    def _transform_part_to_event(self, part: dict[str, Any], message_id: str) -> dict[str, Any] | None:
-        """Backward compat: delegates to adapter."""
-        if isinstance(self.adapter, OpenCodeAdapter):
-            return self.adapter._transform_part_to_event(part, message_id)
-        return None
-
-    def _build_prompt_request_body(
-        self,
-        content: str,
-        model: str | None,
-        opencode_message_id: str | None = None,
-        reasoning_effort: str | None = None,
-    ) -> dict[str, Any]:
-        """Backward compat: delegates to adapter."""
-        if isinstance(self.adapter, OpenCodeAdapter):
-            return self.adapter._build_prompt_request_body(
-                content, model, opencode_message_id, reasoning_effort
-            )
-        return {"parts": [{"type": "text", "text": content}]}
-
-    async def _parse_sse_stream(
-        self,
-        response: httpx.Response,
-        timeout_ctx: asyncio.Timeout | None = None,
-    ) -> AsyncIterator[dict[str, Any]]:
-        """Backward compat: delegates to adapter."""
-        if isinstance(self.adapter, OpenCodeAdapter):
-            async for event in self.adapter._parse_sse_stream(response, timeout_ctx):
-                yield event
-
-    async def _stream_opencode_response_sse(
-        self,
-        message_id: str,
-        content: str,
-        model: str | None = None,
-        reasoning_effort: str | None = None,
-    ) -> AsyncIterator[dict[str, Any]]:
-        """Backward compat: delegates to adapter.send_prompt()."""
-        self._sync_adapter_http_client()
-        if isinstance(self.adapter, OpenCodeAdapter):
-            # Sync PROMPT_MAX_DURATION in case test overrides it on bridge
-            if hasattr(self, 'PROMPT_MAX_DURATION'):
-                self.adapter.PROMPT_MAX_DURATION = self.PROMPT_MAX_DURATION
-            async for event in self.adapter.send_prompt(
-                self._session_id or "", content, message_id, model, reasoning_effort
-            ):
-                yield event
-
-    async def _fetch_final_message_state(
-        self,
-        message_id: str,
-        opencode_message_id: str,
-        cumulative_text: dict[str, str],
-        tracked_msg_ids: set[str] | None = None,
-        compaction_occurred: bool = False,
-    ) -> AsyncIterator[dict[str, Any]]:
-        """Backward compat: delegates to adapter."""
-        self._sync_adapter_http_client()
-        if isinstance(self.adapter, OpenCodeAdapter):
-            async for event in self.adapter._fetch_final_message_state(
-                message_id, opencode_message_id, cumulative_text, tracked_msg_ids, compaction_occurred
-            ):
-                yield event
-
-    @staticmethod
-    def _extract_error_message(error: object) -> str | None:
-        """Backward compat: delegates to OpenCodeAdapter._extract_error_message."""
-        return OpenCodeAdapter._extract_error_message(error)
-
-    async def _create_opencode_session(self) -> None:
-        """Backward compat: delegates to adapter.create_session()."""
-        self._sync_adapter_http_client()
-        self._session_id = await self.adapter.create_session(str(self.repo_path))
-
-    async def _request_opencode_stop(self, reason: str) -> bool:
-        """Backward compat: delegates to adapter.stop()."""
-        self._sync_adapter_http_client()
-        if self._session_id:
-            await self.adapter.stop(self._session_id)
-            return True
-        return False
-
-    async def _load_session_id(self) -> None:
-        """Backward compat: delegates to adapter.load_session_id()."""
-        self._sync_adapter_http_client()
-        self._session_id = await self.adapter.load_session_id()
-
-    async def _save_session_id(self) -> None:
-        """Backward compat: delegates to adapter.save_session_id()."""
-        if self._session_id:
-            await self.adapter.save_session_id(self._session_id)
-
-    # ─────────────────────────────────────────────────────────────────────
 
     @property
     def ws_url(self) -> str:
@@ -306,11 +192,12 @@ class AgentBridge:
             )
         )
 
-        # Configure adapter with http_client and port
+        # [ADAPTER CHANGE] Give the adapter the HTTP client and port so it can
+        # talk to the agent process on localhost.
         port = int(os.environ.get("AGENT_PORT", "4096"))
         self.adapter.configure(self.http_client, port)
 
-        # Load persisted session ID
+        # [ADAPTER CHANGE] Check if there's a session from a previous snapshot.
         self._session_id = await self.adapter.load_session_id()
 
         reconnect_attempts = 0
@@ -644,7 +531,10 @@ class AgentBridge:
         return None
 
     def _validate_event(self, event: dict[str, Any]) -> None:
-        """Validate adapter events before sending to SessionDO."""
+        """[ADAPTER CHANGE] Validate adapter events before sending to SessionDO.
+
+        Catches malformed events from adapters before they reach the control plane.
+        """
         event_type = event.get("type")
         required = REQUIRED_EVENT_FIELDS.get(event_type)
         if required:
@@ -684,23 +574,29 @@ class AgentBridge:
                 )
             )
 
+            # [ADAPTER CHANGE] Ensure session exists (create or resume)
             if not self._session_id:
-                self._session_id = await self.adapter.create_session(str(self.repo_path))
+                self._session_id = await self.adapter.ensure_session(str(self.repo_path))
 
+            # [ADAPTER CHANGE] Stream events from adapter, validate each one,
+            # forward to control plane. This replaced ~300 lines of inline
+            # OpenCode SSE parsing.
             had_error = False
             error_message = None
+            # Send prompt to agent and the FOR (loop) each events that comes back 
             async for event in self.adapter.send_prompt(
                 self._session_id, content, message_id, model, reasoning_effort
             ):
+                # For each event the agent streams back 
                 self._validate_event(event)
-                if event.get("type") == "error":
+                if event.get("type") == "error": # Track if anything is wrong  
                     had_error = True
                     error_message = event.get("error")
-                await self._send_event(event)
+                await self._send_event(event) # Forward to control plane 
 
             if had_error:
                 outcome = "error"
-
+            # Bridge sends final we are done event to control plane after the loop 
             await self._send_event(
                 {
                     "type": "execution_complete",
@@ -709,7 +605,7 @@ class AgentBridge:
                     **({"error": error_message} if error_message else {}),
                 }
             )
-
+            # Control plane knows we are done know 
         except Exception as e:
             outcome = "error"
             self.log.error("prompt.error", exc=e, message_id=message_id)
@@ -738,14 +634,14 @@ class AgentBridge:
         task = self._current_prompt_task
         if task and not task.done():
             task.cancel()
-        # Best-effort: also tell agent to stop
-        self._sync_adapter_http_client()
+        # [ADAPTER CHANGE] Tell the agent to abort
         if self._session_id:
             await self.adapter.stop(self._session_id)
 
     async def _handle_snapshot(self) -> None:
         """Handle snapshot command - prepare for snapshot."""
         self.log.info("bridge.snapshot_prepare")
+        # [ADAPTER CHANGE] Ask adapter for session ID to include in snapshot
         await self._send_event(
             {
                 "type": "snapshot_ready",
@@ -992,7 +888,8 @@ async def main() -> None:
 
     args = parser.parse_args()
 
-    # Load adapter from environment
+    # [ADAPTER CHANGE] Load adapter from env var — this is how you swap agents.
+    # Set AGENT_ADAPTER=pi (or any other registered adapter) to use a different agent.
     agent_name = os.environ.get("AGENT_ADAPTER", "opencode")
     adapter = load_adapter(agent_name)
 

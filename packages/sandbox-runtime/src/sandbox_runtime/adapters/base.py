@@ -1,13 +1,15 @@
 """Base adapter interface for pluggable coding agents.
 
 Any coding agent that wants to work inside the Open-Inspect sandbox must
-implement this ABC. The adapter is instantiated in TWO separate processes:
+implement this ABC - these 13 methods. The adapter is instantiated in TWO separate processes:
 
 - **Entrypoint process** — calls install(), start(), get_process(), forward_logs(), shutdown()
-- **Bridge subprocess** — calls configure(), create_session(), send_prompt(), stop(),
+- **Bridge subprocess** — calls configure(), ensure_session(), send_prompt(), stop(),
   health_check(), load_session_id(), save_session_id(), get_session_id_for_snapshot()
 
-See the spec for details on the two-process architecture.
+See the spec for details on the two-process architecture. They are two diff process because they need separate 
+crash ad restart flows. If ws drops, bridge can restart without killing the agent, if agent crashed, 
+don't need to kill the bridge bc that would mean loosing the streaming state and all the events, pe. 
 """
 
 import asyncio
@@ -24,7 +26,7 @@ class AgentAdapter(ABC):
 
     This class gets instantiated in TWO separate processes:
     - Entrypoint process: calls install() and start()
-    - Bridge subprocess: calls create_session(), send_prompt(), stop()
+    - Bridge subprocess: calls ensure_session(), send_prompt(), stop()
     """
 
     # --- Entrypoint process methods (agent lifecycle) ---
@@ -70,8 +72,12 @@ class AgentAdapter(ABC):
         """
 
     @abstractmethod
-    async def create_session(self, repo_path: str) -> str:
-        """Create a working session. Return a session ID.
+    async def ensure_session(self, repo_path: str) -> str:
+        """Create or resume a working session. Return a session ID.
+
+        May create a fresh session or resume an existing one (e.g. after
+        snapshot restore). The bridge doesn't care which — it just needs
+        a session ID back.
 
         Args:
             repo_path: Path to the repository.
