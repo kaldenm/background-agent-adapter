@@ -1,8 +1,6 @@
 /**
- * Adapts a DurableObjectNamespace + name to a Fetcher-compatible interface.
- *
- * Used to route automation callbacks to the SchedulerDO via the existing
- * CallbackNotificationService, which expects a `Fetcher` binding.
+ * The object file for the scheduler so that the scheduler can
+ * receive information from the session manager.
  */
 
 export class DOFetcherAdapter implements Fetcher {

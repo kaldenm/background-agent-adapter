@@ -157,7 +157,7 @@ export interface SandboxLifecycleConfig {
   inactivity: InactivityConfig;
   heartbeat: HeartbeatConfig;
   connectingTimeout: ConnectingTimeoutConfig;
-  controlPlaneUrl: string;
+  serverUrl: string;
   /** Default model ID used when the session has no model override. */
   model: string;
   /** Session ID for log correlation. Optional — logs will omit sessionId if not provided. */
@@ -169,7 +169,7 @@ export interface SandboxLifecycleConfig {
 /**
  * Default lifecycle configuration.
  */
-export const DEFAULT_LIFECYCLE_CONFIG: Omit<SandboxLifecycleConfig, "controlPlaneUrl" | "model"> = {
+export const DEFAULT_LIFECYCLE_CONFIG: Omit<SandboxLifecycleConfig, "serverUrl" | "model"> = {
   circuitBreaker: DEFAULT_CIRCUIT_BREAKER_CONFIG,
   spawn: DEFAULT_SPAWN_CONFIG,
   inactivity: DEFAULT_INACTIVITY_CONFIG,
@@ -417,7 +417,7 @@ export class SandboxLifecycleManager {
         sandboxId: expectedSandboxId,
         repoOwner: session.repo_owner,
         repoName: session.repo_name,
-        controlPlaneUrl: this.config.controlPlaneUrl,
+        serverUrl: this.config.serverUrl,
         sandboxAuthToken,
         provider,
         model: modelId,
@@ -583,7 +583,7 @@ export class SandboxLifecycleManager {
         sessionId: session.session_name || session.id,
         sandboxId: expectedSandboxId,
         sandboxAuthToken,
-        controlPlaneUrl: this.config.controlPlaneUrl,
+        serverUrl: this.config.serverUrl,
         repoOwner: session.repo_owner,
         repoName: session.repo_name,
         provider,

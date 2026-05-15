@@ -1,5 +1,6 @@
 {
-  "name": "@open-inspect/control-plane",
+  "name": "@open-inspect/server",
+  "description": "Cloudflare Workers + Durable Objects server for session management, WebSocket streaming, and GitHub integration",
   "version": "0.1.0",
   "private": true,
   "type": "module",

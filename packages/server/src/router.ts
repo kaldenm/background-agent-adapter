@@ -403,7 +403,7 @@ const routes: Route[] = [
   {
     method: "GET",
     pattern: parsePattern("/health"),
-    handler: async () => json({ status: "healthy", service: "open-inspect-control-plane" }),
+    handler: async () => json({ status: "healthy", service: "open-inspect-server" }),
   },
 
   // Session management
@@ -548,6 +548,14 @@ const routes: Route[] = [
 
   // Analytics
   ...analyticsRoutes,
+
+  // Scheduler dispatch — bots submit work requests here instead of creating sessions directly.
+  // The scheduler is the single source of truth for what runs.
+  {
+    method: "POST" as const,
+    pattern: parsePattern("/scheduler/dispatch"),
+    handler: handleSchedulerDispatch,
+  },
 
   // Webhooks (public routes — auth handled per-route)
   ...webhookRoutes,
@@ -2239,4 +2247,41 @@ async function handleCancelChild(
   }
 
   return response;
+}
+
+// ─── Scheduler event submission ──────────────────────────────────────────────
+
+/**
+ * Forward an event to the scheduler. Bots call this instead of creating
+ * sessions directly. The scheduler is the single source of truth for
+ * what runs.
+ */
+/**
+ * Forward a dispatch request to the scheduler.
+ * Bots call this instead of POST /sessions.
+ * The scheduler creates the session — it's the single source of truth.
+ */
+async function handleSchedulerDispatch(
+  request: Request,
+  env: Env,
+  _match: RegExpMatchArray,
+  _ctx: RequestContext
+): Promise<Response> {
+  if (!env.SCHEDULER) {
+    return error("Scheduler not configured", 503);
+  }
+
+  const body = await request.text();
+
+  const doId = env.SCHEDULER.idFromName("global-scheduler");
+  const stub = env.SCHEDULER.get(doId);
+
+  const response = await stub.fetch("http://internal/internal/dispatch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+
+  const result = await response.json();
+  return json(result, response.status);
 }

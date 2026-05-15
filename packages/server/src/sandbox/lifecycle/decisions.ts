@@ -470,7 +470,7 @@ export interface ConnectingTimeoutResult {
  * Evaluate whether a sandbox has been stuck in "connecting" too long.
  *
  * After a sandbox is spawned, it must establish a WebSocket connection to the
- * control plane within the configured timeout. If the bridge never connects
+ * server within the configured timeout. If the bridge never connects
  * (crash, network failure, etc.), this function detects the timeout so the
  * alarm handler can fail the sandbox.
  *
@@ -556,7 +556,7 @@ export interface ExecutionTimeoutConfig {
 
 /**
  * Default: 90 minutes — matches the bridge's PROMPT_MAX_DURATION.
- * The control plane timeout should never preempt the bridge's own timeout for
+ * The server timeout should never preempt the bridge's own timeout for
  * legitimate long-running prompts. It fires only when the bridge is dead and
  * can't enforce its own timeout.
  */

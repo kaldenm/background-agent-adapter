@@ -139,7 +139,7 @@ the generated `open-inspect/<session>` branch.
 ### Setup
 
 ```bash
-cd packages/control-plane
+cd packages/server
 npm install
 ```
 

@@ -289,7 +289,7 @@ function createMockProvider(
 function createTestConfig(): SandboxLifecycleConfig {
   return {
     ...DEFAULT_LIFECYCLE_CONFIG,
-    controlPlaneUrl: "https://test.workers.dev",
+    serverUrl: "https://test.workers.dev",
     model: "anthropic/claude-sonnet-4-5",
   };
 }

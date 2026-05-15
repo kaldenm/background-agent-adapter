@@ -1,5 +1,6 @@
 {
   "name": "@open-inspect/shared",
+  "description": "Shared types, auth utilities, and model definitions for the Open-Inspect platform",
   "version": "0.1.0",
   "private": true,
   "type": "module",

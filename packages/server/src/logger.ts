@@ -1,8 +1,8 @@
 /**
- * Structured JSON logger for the control-plane Cloudflare Worker.
+ * Structured JSON logger for the server Cloudflare Worker.
  *
  * Delegates to the shared logger factory from @open-inspect/shared,
- * pre-binding the "control-plane" service name so callers don't repeat it.
+ * pre-binding the "server" service name so callers don't repeat it.
  */
 
 import { createLogger as _createLogger, type LogLevel } from "@open-inspect/shared";
@@ -11,7 +11,7 @@ export type { Logger } from "@open-inspect/shared";
 export type { LogLevel } from "@open-inspect/shared";
 export { parseLogLevel } from "@open-inspect/shared";
 
-const SERVICE_NAME = "control-plane";
+const SERVICE_NAME = "server";
 
 export function createLogger(
   component: string,

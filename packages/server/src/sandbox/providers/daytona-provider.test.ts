@@ -83,7 +83,7 @@ const baseCreateConfig: CreateSandboxConfig = {
   sandboxId: "sandbox-456",
   repoOwner: "testowner",
   repoName: "testrepo",
-  controlPlaneUrl: "https://control-plane.test",
+  serverUrl: "https://server.test",
   sandboxAuthToken: "auth-token-abc",
   provider: "anthropic",
   model: "anthropic/claude-sonnet-4-5",
@@ -170,7 +170,7 @@ describe("DaytonaSandboxProvider", () => {
 
       expect(envVars.PYTHONUNBUFFERED).toBe("1");
       expect(envVars.SANDBOX_ID).toBe("sandbox-456");
-      expect(envVars.CONTROL_PLANE_URL).toBe("https://control-plane.test");
+      expect(envVars.CONTROL_PLANE_URL).toBe("https://server.test");
       expect(envVars.SANDBOX_AUTH_TOKEN).toBe("auth-token-abc");
       expect(envVars.REPO_OWNER).toBe("testowner");
       expect(envVars.REPO_NAME).toBe("testrepo");

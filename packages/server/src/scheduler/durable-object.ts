@@ -1,11 +1,16 @@
 /**
- * SchedulerDO — singleton Durable Object that processes scheduled automations.
+ * Scheduler — the single source of truth for what's running.
  *
- * Woken by the Worker's `scheduled()` handler (cron trigger) or by manual
- * trigger requests from the automation CRUD routes. Handles:
- * - Tick: recovery sweep + process overdue automations
- * - Trigger: manual single-automation trigger
- * - RunComplete: callback from SessionDO on execution completion
+ * ALL session creation goes through here. Nothing starts work without
+ * the scheduler knowing about it.
+ *
+ * Endpoints:
+ *   /internal/tick         — Cron wakes this. Recovery sweep + poll trackers + process automations.
+ *   /internal/dispatch     — Bots + web UI submit work here. The single door.
+ *   /internal/event        — Events pushed to us (Sentry/webhooks). Match against rules.
+ *   /internal/trigger      — User clicks "run now" on a specific automation.
+ *   /internal/run-complete — Session finished. Update run status.
+ *   /internal/health       — Health check.
  */
 
 import { DurableObject } from "cloudflare:workers";
@@ -13,14 +18,14 @@ import {
   nextCronOccurrence,
   matchesConditions,
   conditionRegistry,
-  type AutomationCallbackContext,
   type AutomationEvent,
   type TriggerConfig,
 } from "@open-inspect/shared";
 import { AutomationStore, toAutomationRun, type AutomationRow } from "../db/automation-store";
-import { SessionIndexStore } from "../db/session-index";
 import { UserStore } from "../db/user-store";
 import { generateId } from "../auth/crypto";
+import { createSession, promptSession, type CreateSessionOptions } from "../session/session-server";
+import type { TrackerAdapter } from "../tracker";
 import { createLogger, parseLogLevel } from "../logger";
 import type { Logger } from "../logger";
 import type { Env } from "../types";
@@ -37,12 +42,15 @@ const DEFAULT_EXECUTION_TIMEOUT_MS = 90 * 60 * 1000;
 /** Consecutive failure threshold for auto-pause. */
 const AUTO_PAUSE_THRESHOLD = 3;
 
-export class SchedulerDO extends DurableObject<Env> {
+export class Scheduler extends DurableObject<Env> {
   private readonly log: Logger;
+  private trackerAdapters: TrackerAdapter[] = [];
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.log = createLogger("scheduler-do", {}, parseLogLevel(env.LOG_LEVEL));
+    // TODO: initialize tracker adapters from env config
+    // e.g. if (env.GITHUB_APP_ID) this.trackerAdapters.push(new GitHubTrackerAdapter(env));
   }
 
   /**
@@ -85,6 +93,9 @@ export class SchedulerDO extends DurableObject<Env> {
     if (request.method === "POST" && path === "/internal/event") {
       return this.handleEvent(request);
     }
+    if (request.method === "POST" && path === "/internal/dispatch") {
+      return this.handleDispatch(request);
+    }
     if (request.method === "POST" && path === "/internal/run-complete") {
       return this.handleRunComplete(request);
     }
@@ -95,7 +106,8 @@ export class SchedulerDO extends DurableObject<Env> {
     return new Response("Not Found", { status: 404 });
   }
 
-  // ─── Tick handler ────────────────────────────────────────────────────────
+  // ─── Tick: cron wakes this every N seconds ──────────────────────────────
+  // Recovery sweep (find stuck/orphaned runs) + process overdue automations.
 
   private async handleTick(): Promise<Response> {
     const store = new AutomationStore(this.env.DB);
@@ -166,11 +178,8 @@ export class SchedulerDO extends DurableObject<Env> {
           nextRunAt
         );
 
-        // Create session + send prompt
         try {
-          const { sessionId } = await this.createSessionForAutomation(automation, runId);
-
-          await this.sendPromptToSession(sessionId, automation, runId);
+          const { sessionId } = await this.dispatchAutomation(automation, runId);
 
           // Update run to running
           await store.updateRun(runId, {
@@ -203,20 +212,106 @@ export class SchedulerDO extends DurableObject<Env> {
       }
     }
 
+    // 3. Poll external trackers for new work
+    let polled = 0;
+    await this.pollTrackers(store)
+      .then((count) => {
+        polled = count;
+      })
+      .catch((e) => {
+        this.log.error("Tracker polling failed", {
+          event: "scheduler.tracker_poll_error",
+          error: e instanceof Error ? e.message : String(e),
+        });
+      });
+
     this.log.info("Tick completed", {
       event: "scheduler.tick_complete",
       processed,
       skipped,
       failed,
+      polled,
       overdue_count: overdue.length,
     });
 
-    return new Response(JSON.stringify({ processed, skipped, failed }), {
+    return new Response(JSON.stringify({ processed, skipped, failed, polled }), {
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  // ─── Recovery sweep ──────────────────────────────────────────────────────
+  // ─── Tracker polling: ask the world "what's new?" ──────────────────────
+  // Each tracker adapter polls one external service (GitHub, Linear, etc.)
+  // and returns candidate issues. We check if we're already working on them,
+  // and dispatch new ones.
+
+  private async pollTrackers(_store: AutomationStore): Promise<number> {
+    if (this.trackerAdapters.length === 0) return 0;
+
+    let dispatched = 0;
+    const sessionStore = await import("../db/session-index").then(
+      (m) => new m.SessionIndexStore(this.env.DB)
+    );
+
+    for (const adapter of this.trackerAdapters) {
+      try {
+        const candidates = await adapter.fetchCandidateIssues();
+
+        for (const issue of candidates) {
+          // Check if we already have a session for this issue
+          const existing = await sessionStore.get(issue.id);
+          if (
+            existing &&
+            existing.status !== "completed" &&
+            existing.status !== "failed" &&
+            existing.status !== "cancelled"
+          ) {
+            continue; // Already working on it
+          }
+
+          try {
+            const { sessionId } = await createSession(this.env, {
+              repoOwner: issue.repoOwner,
+              repoName: issue.repoName,
+              userId: issue.authorId,
+              spawnSource: issue.source === "github" ? "github" : "linear",
+              title: issue.title,
+            });
+
+            await promptSession(this.env, sessionId, {
+              content: issue.prompt,
+              authorId: issue.authorId,
+              source: issue.source,
+            });
+
+            dispatched++;
+            this.log.info("Tracker issue dispatched", {
+              event: "scheduler.tracker_dispatch",
+              tracker: adapter.kind,
+              issue_id: issue.id,
+              session_id: sessionId,
+            });
+          } catch (e) {
+            this.log.error("Failed to dispatch tracker issue", {
+              event: "scheduler.tracker_dispatch_failed",
+              tracker: adapter.kind,
+              issue_id: issue.id,
+              error: e instanceof Error ? e.message : String(e),
+            });
+          }
+        }
+      } catch (e) {
+        this.log.error("Tracker adapter failed", {
+          event: "scheduler.tracker_error",
+          tracker: adapter.kind,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    return dispatched;
+  }
+
+  // ─── Recovery: find stuck runs and fail them ────────────────────────────
 
   private async recoverySweep(store: AutomationStore): Promise<void> {
     // Orphaned starting runs (session creation never completed)
@@ -248,7 +343,8 @@ export class SchedulerDO extends DurableObject<Env> {
     }
   }
 
-  // ─── Event handler ───────────────────────────────────────────────────────
+  // ─── Event: pushed to us from Sentry/webhooks ───────────────────────────
+  // Looks up automation rules that match, checks conditions, dispatches.
 
   private async handleEvent(request: Request): Promise<Response> {
     const event = (await request.json()) as AutomationEvent;
@@ -330,11 +426,10 @@ export class SchedulerDO extends DurableObject<Env> {
         throw e;
       }
 
-      // 5. Create session + send prompt (with event context prepended)
+      // 5. Dispatch via scheduler
       try {
         const instructions = `${event.contextBlock}\n---\n\n${automation.instructions}`;
-        const { sessionId } = await this.createSessionForAutomation(automation, runId);
-        await this.sendPromptToSession(sessionId, automation, runId, instructions);
+        const { sessionId } = await this.dispatchAutomation(automation, runId, instructions);
 
         await store.updateRun(runId, {
           status: "running",
@@ -364,7 +459,7 @@ export class SchedulerDO extends DurableObject<Env> {
     });
   }
 
-  // ─── Manual trigger ──────────────────────────────────────────────────────
+  // ─── Manual override: skip the cron schedule, run this automation now ───
 
   private async handleTrigger(request: Request): Promise<Response> {
     const body = (await request.json()) as { automationId: string };
@@ -415,9 +510,7 @@ export class SchedulerDO extends DurableObject<Env> {
     });
 
     try {
-      const { sessionId } = await this.createSessionForAutomation(automation, runId);
-
-      await this.sendPromptToSession(sessionId, automation, runId);
+      const { sessionId } = await this.dispatchAutomation(automation, runId);
 
       await store.updateRun(runId, {
         status: "running",
@@ -457,7 +550,7 @@ export class SchedulerDO extends DurableObject<Env> {
     }
   }
 
-  // ─── Run complete callback ───────────────────────────────────────────────
+  // ─── Run complete: SessionDO calls back when a session finishes ─────────
 
   private async handleRunComplete(request: Request): Promise<Response> {
     const body = (await request.json()) as {
@@ -520,7 +613,7 @@ export class SchedulerDO extends DurableObject<Env> {
     });
   }
 
-  // ─── Health check ────────────────────────────────────────────────────────
+  // ─── Health ─────────────────────────────────────────────────────────────
 
   private async handleHealth(): Promise<Response> {
     const store = new AutomationStore(this.env.DB);
@@ -535,47 +628,73 @@ export class SchedulerDO extends DurableObject<Env> {
     );
   }
 
-  // ─── Session creation ────────────────────────────────────────────────────
+  // ─── Dispatch: the single door for ALL session creation ─────────────────
+  // Bots, web UI, everything comes through here. The scheduler decides.
 
-  private async createSessionForAutomation(
-    automation: AutomationRow,
-    runId: string
-  ): Promise<{ sessionId: string }> {
-    const sessionId = generateId();
-    const doId = this.env.SESSION.idFromName(sessionId);
-    const stub = this.env.SESSION.get(doId);
+  private async handleDispatch(request: Request): Promise<Response> {
+    const body = (await request.json()) as {
+      session: CreateSessionOptions;
+      prompt: {
+        content: string;
+        authorId: string;
+        source?: string;
+      };
+    };
 
-    // Initialize the session DO
-    const initResponse = await stub.fetch("http://internal/internal/init", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionName: sessionId,
-        repoOwner: automation.repo_owner,
-        repoName: automation.repo_name,
-        repoId: automation.repo_id,
-        defaultBranch: automation.base_branch,
-        model: automation.model,
-        reasoningEffort: automation.reasoning_effort,
-        title: `[Auto] ${automation.name}`,
-        userId: automation.created_by,
-        spawnSource: "automation",
-      }),
-    });
-
-    if (!initResponse.ok) {
-      throw new Error(`Session init failed with status ${initResponse.status}`);
+    if (!body.session || !body.prompt) {
+      return new Response(JSON.stringify({ error: "session and prompt are required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    // Resolve the canonical user_id for the session index.
-    // New automations (post-Phase 5) have user_id populated at creation time, so this
-    // lookup is skipped. Legacy automations have user_id = NULL but store the GitHub
-    // numeric user ID in created_by (set from NextAuth session.user.id in the web UI,
-    // which is the only automation creation path). We look up that GitHub ID in
-    // user_identities to find the canonical user. This fallback becomes dead code once
-    // the Phase 6 backfill populates user_id on all existing automation rows.
-    let userId = automation.user_id;
-    if (!userId && automation.created_by && automation.created_by !== "anonymous") {
+    try {
+      const { sessionId } = await createSession(this.env, body.session);
+
+      await promptSession(this.env, sessionId, {
+        content: body.prompt.content,
+        authorId: body.prompt.authorId,
+        source: body.prompt.source ?? "bot",
+      });
+
+      this.log.info("Direct dispatch succeeded", {
+        event: "scheduler.dispatch",
+        session_id: sessionId,
+        source: body.session.spawnSource,
+        repo: `${body.session.repoOwner}/${body.session.repoName}`,
+      });
+
+      return new Response(JSON.stringify({ sessionId, status: "created" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      this.log.error("Direct dispatch failed", {
+        event: "scheduler.dispatch_failed",
+        source: body.session.spawnSource,
+        error: message,
+      });
+
+      return new Response(JSON.stringify({ error: "Failed to dispatch session" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
+  // ─── Automation dispatch (internal helper) ──────────────────────────────
+  // For cron/event/trigger automations. Resolves user ID, then uses
+  // the shared createSession + promptSession from session layer.
+
+  private async dispatchAutomation(
+    automation: AutomationRow,
+    runId: string,
+    instructionsOverride?: string
+  ): Promise<{ sessionId: string }> {
+    // Resolve user ID (legacy fallback for old automations without user_id)
+    let userId = automation.user_id ?? automation.created_by;
+    if (!automation.user_id && automation.created_by && automation.created_by !== "anonymous") {
       try {
         const userStore = new UserStore(this.env.DB);
         const identity = await userStore.getIdentity("github", automation.created_by);
@@ -583,64 +702,37 @@ export class SchedulerDO extends DurableObject<Env> {
           userId = identity.userId;
         }
       } catch {
-        // Best-effort — proceed without user_id
+        // Best-effort — proceed with created_by
       }
     }
 
-    // Index the session in D1
-    const now = Date.now();
-    const sessionStore = new SessionIndexStore(this.env.DB);
-    await sessionStore.create({
-      id: sessionId,
-      title: `[Auto] ${automation.name}`,
+    const { sessionId } = await createSession(this.env, {
       repoOwner: automation.repo_owner,
       repoName: automation.repo_name,
+      userId,
+      spawnSource: "automation",
+      title: `[Auto] ${automation.name}`,
       model: automation.model,
       reasoningEffort: automation.reasoning_effort,
-      baseBranch: automation.base_branch,
-      status: "created",
-      spawnSource: "automation",
-      spawnDepth: 0,
+      repoId: automation.repo_id,
+      defaultBranch: automation.base_branch,
       automationId: automation.id,
       automationRunId: runId,
-      userId,
-      createdAt: now,
-      updatedAt: now,
+    });
+
+    await promptSession(this.env, sessionId, {
+      content: instructionsOverride ?? automation.instructions,
+      authorId: automation.created_by,
+      source: "automation",
+      callbackContext: {
+        source: "automation",
+        automationId: automation.id,
+        runId,
+        automationName: automation.name,
+      },
     });
 
     return { sessionId };
-  }
-
-  private async sendPromptToSession(
-    sessionId: string,
-    automation: AutomationRow,
-    runId: string,
-    instructionsOverride?: string
-  ): Promise<void> {
-    const doId = this.env.SESSION.idFromName(sessionId);
-    const stub = this.env.SESSION.get(doId);
-
-    const callbackContext: AutomationCallbackContext = {
-      source: "automation",
-      automationId: automation.id,
-      runId,
-      automationName: automation.name,
-    };
-
-    const promptResponse = await stub.fetch("http://internal/internal/prompt", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content: instructionsOverride ?? automation.instructions,
-        authorId: automation.created_by,
-        source: "automation",
-        callbackContext,
-      }),
-    });
-
-    if (!promptResponse.ok) {
-      throw new Error(`Prompt enqueue failed with status ${promptResponse.status}`);
-    }
   }
 }
 

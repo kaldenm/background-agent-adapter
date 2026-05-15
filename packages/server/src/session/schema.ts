@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS sandbox (
   modal_object_id TEXT,                             -- Legacy provider object ID (Modal object ID or Daytona handle)
   snapshot_id TEXT,
   snapshot_image_id TEXT,                           -- Modal Image ID for filesystem snapshot restoration
-  auth_token TEXT,                                  -- Token for sandbox to authenticate back to control plane
+  auth_token TEXT,                                  -- Token for sandbox to authenticate back to server
   auth_token_hash TEXT,                             -- SHA-256 hash of sandbox auth token (preferred)
   status TEXT DEFAULT 'pending',                    -- 'pending', 'spawning', 'connecting', 'warming', 'syncing', 'ready', 'running', 'stale', 'snapshotting', 'stopped', 'failed'
   git_sync_status TEXT DEFAULT 'pending',           -- 'pending', 'in_progress', 'completed', 'failed'

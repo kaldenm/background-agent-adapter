@@ -1,7 +1,7 @@
 /**
  * Mint HS256 JWTs using the Web Crypto API.
  *
- * Used for terminal auth: the control plane signs a JWT with the sandbox's
+ * Used for terminal auth: the server signs a JWT with the sandbox's
  * auth token, and the proxy inside the sandbox verifies it with the same key.
  */
 
