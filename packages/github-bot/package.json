@@ -1,5 +1,6 @@
 {
   "name": "@open-inspect/github-bot",
+  "description": "Cloudflare Worker that translates GitHub webhook events into background coding sessions",
   "version": "0.1.0",
   "private": true,
   "type": "module",

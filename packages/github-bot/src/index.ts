@@ -181,7 +181,6 @@ async function handleWebhook(
     wideEvent.skip_reason = result.skip_reason;
   } else {
     wideEvent.session_id = result.session_id;
-    wideEvent.message_id = result.message_id;
     wideEvent.handler_action = result.handler_action;
   }
   log.info("webhook.handled", wideEvent);

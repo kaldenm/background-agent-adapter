@@ -1,5 +1,6 @@
 {
   "name": "@open-inspect/linear-bot",
+  "description": "Cloudflare Worker that creates background coding sessions from Linear issue assignments",
   "version": "0.1.0",
   "private": true,
   "type": "module",

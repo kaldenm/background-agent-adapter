@@ -129,47 +129,6 @@ async function getAuthHeaders(env: Env, traceId?: string): Promise<Record<string
   };
 }
 
-/**
- * Create a session via the control plane.
- */
-async function createSession(
-  env: Env,
-  params: {
-    repoOwner: string;
-    repoName: string;
-    title: string;
-    model: string;
-    reasoningEffort?: string;
-    actorUserId?: string;
-    actorDisplayName?: string;
-    actorEmail?: string;
-  },
-  traceId?: string
-): Promise<{ ok: true; sessionId: string } | { ok: false; status: number; body: string }> {
-  const headers = await getAuthHeaders(env, traceId);
-  const response = await env.CONTROL_PLANE.fetch("https://internal/sessions", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      ...params,
-      spawnSource: "linear-bot",
-    }),
-  });
-
-  if (!response.ok) {
-    let body = "";
-    try {
-      body = await response.text();
-    } catch {
-      /* ignore */
-    }
-    return { ok: false, status: response.status, body };
-  }
-
-  const result = (await response.json()) as { sessionId: string };
-  return { ok: true, sessionId: result.sessionId };
-}
-
 // ─── Sub-handlers ────────────────────────────────────────────────────────────
 
 async function handleStop(webhook: AgentSessionWebhook, env: Env, traceId: string): Promise<void> {
@@ -491,8 +450,8 @@ async function handleNewSession(
 
   let userModel: string | undefined;
   let userReasoningEffort: string | undefined;
-  let actorDisplayName: string | undefined;
-  let actorEmail: string | undefined;
+  let _actorDisplayName: string | undefined;
+  let _actorEmail: string | undefined;
   const appUserId = webhook.appUserId;
   if (appUserId) {
     const prefs = await getUserPreferences(env, appUserId);
@@ -502,8 +461,8 @@ async function handleNewSession(
     userReasoningEffort = prefs?.reasoningEffort;
 
     const linearUser = await fetchUser(client, appUserId);
-    actorDisplayName = linearUser?.name;
-    actorEmail = linearUser?.email ?? undefined;
+    _actorDisplayName = linearUser?.name;
+    _actorEmail = linearUser?.email ?? undefined;
   }
 
   const labelModel = extractModelFromLabels(labels);
@@ -531,68 +490,17 @@ async function handleNewSession(
     true
   );
 
-  const sessionResult = await createSession(
-    env,
-    {
-      repoOwner: repoOwner!,
-      repoName: repoName!,
-      title: `${issue.identifier}: ${issue.title}`,
-      model,
-      reasoningEffort,
-      actorUserId: appUserId,
-      actorDisplayName,
-      actorEmail,
-    },
-    traceId
-  );
-
-  if (!sessionResult.ok) {
-    await emitAgentActivity(client, agentSessionId, {
-      type: "error",
-      body: `Failed to create a coding session.\n\n\`HTTP ${sessionResult.status}: ${sessionResult.body.slice(0, 200)}\``,
-    });
-    log.error("control_plane.create_session", {
-      trace_id: traceId,
-      issue_identifier: issue.identifier,
-      repo: repoFullName,
-      http_status: sessionResult.status,
-      response_body: sessionResult.body.slice(0, 500),
-      duration_ms: Date.now() - startTime,
-    });
-    return;
-  }
-
-  const headers = await getAuthHeaders(env, traceId);
-  const session = sessionResult;
-
-  await storeIssueSession(env, issue.id, {
-    sessionId: session.sessionId,
-    issueId: issue.id,
-    issueIdentifier: issue.identifier,
-    repoOwner: repoOwner!,
-    repoName: repoName!,
-    model,
-    agentSessionId,
-    createdAt: Date.now(),
-  });
-
-  // Set externalUrls and update plan
-  await updateAgentSession(client, agentSessionId, {
-    externalUrls: [
-      { label: "View Session", url: `${env.WEB_APP_URL}/session/${session.sessionId}` },
-    ],
-    plan: makePlan("session_created"),
-  });
-
-  // ─── Build and send prompt ────────────────────────────────────────────
-
-  // Prefer Linear's promptContext (includes issue, comments, guidance)
+  // Build prompt before dispatch
   let prompt = webhook.agentSession.promptContext
     ? buildPromptContextPrompt(webhook.agentSession.promptContext)
     : buildPrompt(issue, issueDetails, comment);
 
   if (integrationConfig.issueSessionInstructions) {
-    prompt += `\n\n## Additional Instructions\n\n${integrationConfig.issueSessionInstructions}`;
+    prompt += `
+
+## Additional Instructions
+
+${integrationConfig.issueSessionInstructions}`;
   }
 
   const callbackContext: CallbackContext = {
@@ -607,50 +515,79 @@ async function handleNewSession(
     emitToolProgressActivities: integrationConfig.emitToolProgressActivities,
   };
 
-  const promptRes = await env.CONTROL_PLANE.fetch(
-    `https://internal/sessions/${session.sessionId}/prompt`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
+  // All session creation goes through the scheduler — single source of truth.
+  let sessionId: string;
+  try {
+    const headers = await getAuthHeaders(env, traceId);
+    const { dispatchToScheduler } = await import("@open-inspect/shared");
+    const result = await dispatchToScheduler(env.CONTROL_PLANE, headers, {
+      session: {
+        repoOwner: repoOwner!,
+        repoName: repoName!,
+        userId: `linear:${appUserId}`,
+        spawnSource: "linear-bot",
+        title: `${issue.identifier}: ${issue.title}`,
+        model,
+        reasoningEffort,
+      },
+      prompt: {
         content: prompt,
         authorId: `linear:${webhook.appUserId}`,
         source: "linear",
         callbackContext,
-      }),
-    }
-  );
-
-  if (!promptRes.ok) {
-    let promptErrBody = "";
-    try {
-      promptErrBody = await promptRes.text();
-    } catch {
-      /* ignore */
-    }
+      },
+    });
+    sessionId = result.sessionId;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
     await emitAgentActivity(client, agentSessionId, {
       type: "error",
-      body: `Failed to send the prompt to the coding session.\n\n\`HTTP ${promptRes.status}: ${promptErrBody.slice(0, 200)}\``,
+      body: `Failed to create a coding session.
+
+\`${message.slice(0, 200)}\``,
     });
-    log.error("control_plane.send_prompt", {
+    log.error("scheduler.dispatch_failed", {
       trace_id: traceId,
-      session_id: session.sessionId,
       issue_identifier: issue.identifier,
-      http_status: promptRes.status,
-      response_body: promptErrBody.slice(0, 500),
+      repo: repoFullName,
+      error: message,
       duration_ms: Date.now() - startTime,
     });
     return;
   }
 
+  await storeIssueSession(env, issue.id, {
+    sessionId,
+    issueId: issue.id,
+    issueIdentifier: issue.identifier,
+    repoOwner: repoOwner!,
+    repoName: repoName!,
+    model,
+    agentSessionId,
+    createdAt: Date.now(),
+  });
+
+  await updateAgentSession(client, agentSessionId, {
+    externalUrls: [{ label: "View Session", url: `${env.WEB_APP_URL}/session/${sessionId}` }],
+    plan: makePlan("session_created"),
+  });
+
   await emitAgentActivity(client, agentSessionId, {
     type: "response",
-    body: `Working on \`${repoFullName}\` with **${model}**.\n\n${classificationReasoning ? `*${classificationReasoning}*\n\n` : ""}[View session](${env.WEB_APP_URL}/session/${session.sessionId})`,
+    body: `Working on \`${repoFullName}\` with **${model}**.
+
+${
+  classificationReasoning
+    ? `*${classificationReasoning}*
+
+`
+    : ""
+}[View session](${env.WEB_APP_URL}/session/${sessionId})`,
   });
 
   log.info("agent_session.session_created", {
     trace_id: traceId,
-    session_id: session.sessionId,
+    session_id: sessionId,
     agent_session_id: agentSessionId,
     issue_identifier: issue.identifier,
     repo: repoFullName,

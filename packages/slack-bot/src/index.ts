@@ -76,80 +76,6 @@ async function getAuthHeaders(env: Env, traceId?: string): Promise<Record<string
 }
 
 /**
- * Create a session via the control plane.
- */
-async function createSession(
-  env: Env,
-  repo: RepoConfig,
-  title: string | undefined,
-  model: string,
-  reasoningEffort: string | undefined,
-  branch: string | undefined,
-  traceId?: string,
-  slackUserId?: string,
-  actorDisplayName?: string,
-  actorEmail?: string
-): Promise<{ sessionId: string; status: string } | null> {
-  const startTime = Date.now();
-  const base = {
-    trace_id: traceId,
-    repo_owner: repo.owner,
-    repo_name: repo.name,
-    model,
-    reasoning_effort: reasoningEffort,
-    branch,
-    slack_user_id: slackUserId,
-  };
-  try {
-    const headers = await getAuthHeaders(env, traceId);
-    const response = await env.CONTROL_PLANE.fetch("https://internal/sessions", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        repoOwner: repo.owner,
-        repoName: repo.name,
-        title: title || `Slack: ${repo.name}`,
-        model,
-        reasoningEffort,
-        branch,
-        spawnSource: "slack-bot",
-        actorUserId: slackUserId,
-        actorDisplayName,
-        actorEmail,
-      }),
-    });
-
-    if (!response.ok) {
-      log.error("control_plane.create_session", {
-        ...base,
-        outcome: "error",
-        http_status: response.status,
-        duration_ms: Date.now() - startTime,
-      });
-      return null;
-    }
-
-    const result = (await response.json()) as { sessionId: string; status: string };
-    log.info("control_plane.create_session", {
-      ...base,
-      outcome: "success",
-      session_id: result.sessionId,
-      http_status: 200,
-      duration_ms: Date.now() - startTime,
-    });
-    return result;
-  } catch (e) {
-    log.error("control_plane.create_session", {
-      ...base,
-      outcome: "error",
-      error: e instanceof Error ? e : new Error(String(e)),
-      duration_ms: Date.now() - startTime,
-    });
-    return null;
-  }
-}
-
-/**
  * Send a prompt to a session via the control plane.
  */
 async function sendPrompt(
@@ -895,35 +821,63 @@ async function startSessionAndSendPrompt(
   const branch = repoBranch ?? globalBranch;
 
   // Best-effort user info resolution for identity linking
-  let displayName: string | undefined;
-  let email: string | undefined;
+  let _displayName: string | undefined;
+  let _email: string | undefined;
   try {
     const userInfo = await getUserInfo(env.SLACK_BOT_TOKEN, userId);
-    displayName =
+    _displayName =
       userInfo.user?.profile?.display_name ||
       userInfo.user?.real_name ||
       userInfo.user?.name ||
       undefined;
-    email = userInfo.user?.profile?.email || undefined;
+    _email = userInfo.user?.profile?.email || undefined;
   } catch {
     // Proceed with no display name / email — control plane handles missing fields
   }
 
-  // Create session via control plane with user's preferred model, reasoning effort, and branch
-  const session = await createSession(
-    env,
-    repo,
-    messageText.slice(0, 100),
+  // Build prompt content with channel and thread context if available
+  const channelContext = channelName ? formatChannelContext(channelName, channelDescription) : "";
+  const threadContext = previousMessages ? formatThreadContext(previousMessages) : "";
+  const promptContent = channelContext + threadContext + messageText;
+
+  // Build callback context for follow-up notification
+  const callbackContext: CallbackContext = {
+    source: "slack",
+    channel,
+    threadTs,
+    repoFullName: repo.fullName,
     model,
     reasoningEffort,
-    branch,
-    traceId,
-    userId,
-    displayName,
-    email
-  );
+  };
 
-  if (!session) {
+  // All session creation goes through the scheduler — single source of truth.
+  let result: { sessionId: string };
+  try {
+    const headers = await getAuthHeaders(env, traceId);
+    const { dispatchToScheduler } = await import("@open-inspect/shared");
+    result = await dispatchToScheduler(env.CONTROL_PLANE, headers, {
+      session: {
+        repoOwner: repo.owner,
+        repoName: repo.name,
+        userId: `slack:${userId}`,
+        spawnSource: "slack-bot",
+        title: messageText.slice(0, 100) || `Slack: ${repo.name}`,
+        model,
+        reasoningEffort,
+        branch,
+      },
+      prompt: {
+        content: promptContent,
+        authorId: `slack:${userId}`,
+        source: "slack",
+        callbackContext,
+      },
+    });
+  } catch (e) {
+    log.error("scheduler.dispatch_failed", {
+      trace_id: traceId,
+      error: e instanceof Error ? e.message : String(e),
+    });
     await postMessage(
       env.SLACK_BOT_TOKEN,
       channel,
@@ -937,45 +891,10 @@ async function startSessionAndSendPrompt(
     env,
     channel,
     threadTs,
-    buildThreadSession(session.sessionId, repo, model, reasoningEffort)
+    buildThreadSession(result.sessionId, repo, model, reasoningEffort)
   );
 
-  // Build callback context for follow-up notification
-  const callbackContext: CallbackContext = {
-    source: "slack",
-    channel,
-    threadTs,
-    repoFullName: repo.fullName,
-    model,
-    reasoningEffort,
-  };
-
-  // Build prompt content with channel and thread context if available
-  const channelContext = channelName ? formatChannelContext(channelName, channelDescription) : "";
-  const threadContext = previousMessages ? formatThreadContext(previousMessages) : "";
-  const promptContent = channelContext + threadContext + messageText;
-
-  // Send the prompt to the session
-  const promptResult = await sendPrompt(
-    env,
-    session.sessionId,
-    promptContent,
-    `slack:${userId}`,
-    callbackContext,
-    traceId
-  );
-
-  if (!promptResult) {
-    await postMessage(
-      env.SLACK_BOT_TOKEN,
-      channel,
-      "Session created but failed to send prompt. Please try again.",
-      { thread_ts: threadTs }
-    );
-    return null;
-  }
-
-  return { sessionId: session.sessionId };
+  return { sessionId: result.sessionId };
 }
 
 /**
