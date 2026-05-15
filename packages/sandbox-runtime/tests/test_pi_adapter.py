@@ -51,20 +51,20 @@ async def test_install_creates_pi_directory(tmp_path):
 
 
 # ─────────────────────────────────────────────────────────────────────
-# start()
+# prepare()
 # ─────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_start_validates_binary(tmp_path):
-    """start() should call pi --version to validate."""
+async def test_prepare_validates_binary(tmp_path):
+    """prepare() should call pi --version to validate."""
     mock_process = AsyncMock()
     mock_process.communicate = AsyncMock(return_value=(b"1.0.0\n", b""))
     mock_process.returncode = 0
 
     with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
         adapter = PiAdapter()
-        await adapter.start(tmp_path, {"provider": "anthropic"})
+        await adapter.prepare(tmp_path, {"provider": "anthropic"})
 
         mock_exec.assert_called_once()
         args = mock_exec.call_args[0]
@@ -73,7 +73,7 @@ async def test_start_validates_binary(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_start_raises_on_missing_binary(tmp_path):
+async def test_prepare_raises_on_missing_binary(tmp_path):
     mock_process = AsyncMock()
     mock_process.communicate = AsyncMock(return_value=(b"", b"not found"))
     mock_process.returncode = 127
@@ -81,7 +81,7 @@ async def test_start_raises_on_missing_binary(tmp_path):
     with patch("asyncio.create_subprocess_exec", return_value=mock_process):
         adapter = PiAdapter()
         with pytest.raises(RuntimeError, match="Pi binary not found"):
-            await adapter.start(tmp_path, {})
+            await adapter.prepare(tmp_path, {})
 
 
 @pytest.mark.asyncio
@@ -524,7 +524,7 @@ async def test_send_prompt_emits_lifecycle_status_events():
     adapter._process.stdin.drain = AsyncMock()
     adapter._process.stdin.is_closing = MagicMock(return_value=False)
 
-    # Queue lifecycle status events (normally queued during ensure_session)
+    # Queue lifecycle status events (normally queued during configure/spawn)
     adapter._pending_status = [
         {"type": "agent_status", "status": "spawning", "message": "Starting Pi", "adapter": "pi"},
         {"type": "agent_status", "status": "ready", "message": "Pi ready", "adapter": "pi"},

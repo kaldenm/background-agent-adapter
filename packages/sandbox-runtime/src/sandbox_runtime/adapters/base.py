@@ -3,8 +3,8 @@
 Any coding agent that wants to work inside the Open-Inspect sandbox must
 implement this ABC - these 13 methods. The adapter is instantiated in TWO separate processes:
 
-- **Entrypoint process** — calls install(), start(), get_process(), forward_logs(), shutdown()
-- **Bridge subprocess** — calls configure(), ensure_session(), send_prompt(), stop(),
+- **Entrypoint process** — calls install(), prepare(), get_process(), forward_logs(), shutdown()
+- **Bridge subprocess** — calls configure(), create_session(), send_prompt(), stop(),
   health_check(), load_session_id(), save_session_id(), get_session_id_for_snapshot()
 
 See the spec for details on the two-process architecture. They are two diff process because they need separate 
@@ -25,8 +25,8 @@ class AgentAdapter(ABC):
     """Implement this to plug any coding agent into Open-Inspect.
 
     This class gets instantiated in TWO separate processes:
-    - Entrypoint process: calls install() and start()
-    - Bridge subprocess: calls ensure_session(), send_prompt(), stop()
+    - Entrypoint process: calls install() and prepare()
+    - Bridge subprocess: calls create_session(), send_prompt(), stop()
     """
 
     # --- Entrypoint process methods (agent lifecycle) ---
@@ -43,8 +43,12 @@ class AgentAdapter(ABC):
         """
 
     @abstractmethod
-    async def start(self, workdir: Path, session_config: dict) -> None:
-        """Launch the agent process. Block until healthy.
+    async def prepare(self, workdir: Path, session_config: dict) -> None:
+        """Prepare the agent so the bridge can connect.
+
+        For server agents: spawn the server process, wait until healthy.
+        For subprocess agents: validate the binary is installed and ready.
+        The agent does not do work until send_prompt() is called.
 
         Args:
             workdir: The working directory (repo root).
@@ -62,9 +66,12 @@ class AgentAdapter(ABC):
     # --- Bridge subprocess methods (agent communication) ---
 
     @abstractmethod
-    def configure(self, http_client: httpx.AsyncClient, port: int) -> None:
-        """Called by bridge on boot. Gives adapter the shared http_client
-        and the port the agent is listening on.
+    async def configure(self, http_client: httpx.AsyncClient, port: int) -> None:
+        """Called by bridge on boot. Establish communication with the agent.
+
+        For server agents: store the HTTP client pointed at the running server.
+        For subprocess agents: spawn the process and set up stdin/stdout pipes.
+        After configure() returns, the bridge can talk to the agent.
 
         Args:
             http_client: Shared httpx client for localhost communication.
@@ -72,12 +79,12 @@ class AgentAdapter(ABC):
         """
 
     @abstractmethod
-    async def ensure_session(self, repo_path: str) -> str:
-        """Create or resume a working session. Return a session ID.
+    async def create_session(self, repo_path: str) -> str:
+        """Create a new agent session and return the session ID.
 
-        May create a fresh session or resume an existing one (e.g. after
-        snapshot restore). The bridge doesn't care which — it just needs
-        a session ID back.
+        Only called when load_session_id() found nothing to resume.
+        The bridge handles the resume-or-create decision — this method
+        just creates.
 
         Args:
             repo_path: Path to the repository.

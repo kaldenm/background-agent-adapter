@@ -1,7 +1,7 @@
 """OpenCode agent adapter.
 
 Implements the AgentAdapter interface for the OpenCode coding agent.
-All OpenCode-specific logic lives here — extracted from bridge.py and entrypoint.py.
+All OpenCode-specific logic lives here — extracted from bridge.py and supervisor.py.
 """
 
 import asyncio
@@ -193,7 +193,7 @@ class OpenCodeAdapter(AgentAdapter):
         if mcp_servers:
             await self._install_mcp_packages(mcp_servers)
 
-    async def start(self, workdir: Path, session_config: dict) -> None:
+    async def prepare(self, workdir: Path, session_config: dict) -> None:
         """Launch OpenCode server with configuration. Blocks until healthy."""
         self._setup_openai_oauth()
         self.log.info("opencode.start")
@@ -269,7 +269,7 @@ class OpenCodeAdapter(AgentAdapter):
     # Bridge subprocess methods (agent communication)
     # ─────────────────────────────────────────────────────────────────────
 
-    def configure(self, http_client: httpx.AsyncClient, port: int) -> None:
+    async def configure(self, http_client: httpx.AsyncClient, port: int) -> None:
         """Configure for bridge communication."""
         self.http_client = http_client
         self.base_url = f"http://localhost:{port}"
@@ -284,7 +284,7 @@ class OpenCodeAdapter(AgentAdapter):
             except ValueError:
                 pass
 
-    async def ensure_session(self, repo_path: str) -> str:
+    async def create_session(self, repo_path: str) -> str:
         """Create a new OpenCode session (OpenCode always creates fresh)."""
         if not self.http_client:
             raise RuntimeError("HTTP client not initialized")

@@ -81,7 +81,7 @@ class AgentBridge:
         2. adapter.load_session_id()             ← check disk for previous session
 
         FIRST PROMPT:
-        3. adapter.ensure_session(repo_path)     ← create or resume a session
+        3. adapter.create_session(repo_path)      ← create a new session
         4. adapter.send_prompt(...)              ← send prompt, stream events back
 
         SUBSEQUENT PROMPTS:
@@ -195,7 +195,7 @@ class AgentBridge:
         # [ADAPTER CHANGE] Give the adapter the HTTP client and port so it can
         # talk to the agent process on localhost.
         port = int(os.environ.get("AGENT_PORT", "4096"))
-        self.adapter.configure(self.http_client, port)
+        await self.adapter.configure(self.http_client, port)
 
         # [ADAPTER CHANGE] Check if there's a session from a previous snapshot.
         self._session_id = await self.adapter.load_session_id()
@@ -574,9 +574,9 @@ class AgentBridge:
                 )
             )
 
-            # [ADAPTER CHANGE] Ensure session exists (create or resume)
+            # [ADAPTER CHANGE] Create session if none loaded from snapshot
             if not self._session_id:
-                self._session_id = await self.adapter.ensure_session(str(self.repo_path))
+                self._session_id = await self.adapter.create_session(str(self.repo_path))
 
             # [ADAPTER CHANGE] Stream events from adapter, validate each one,
             # forward to control plane. This replaced ~300 lines of inline

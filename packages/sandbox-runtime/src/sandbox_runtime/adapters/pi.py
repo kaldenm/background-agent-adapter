@@ -6,7 +6,7 @@ Pi runs in RPC mode as a subprocess communicating via JSONL over stdin/stdout.
 Unlike OpenCode (HTTP server + SSE), the bridge owns the Pi process directly.
 
 Architecture:
-- Entrypoint: install() writes .pi/ config, start() validates binary only
+- Entrypoint: install() writes .pi/ config, prepare() validates binary only
 - Bridge: configure() spawns Pi subprocess, send_prompt() reads JSONL events
 """
 
@@ -94,12 +94,12 @@ class PiAdapter(AgentAdapter):
 
         self.log.info("pi.install_complete", workdir=str(workdir))
 
-    async def start(self, workdir: Path, session_config: dict) -> None:
-        """Validate Pi binary exists. Does NOT actually start Pi.
+    async def prepare(self, workdir: Path, session_config: dict) -> None:
+        """Validate Pi binary exists. Does NOT spawn Pi.
 
-        Pi is spawned later in ensure_session() because it needs to know
-        whether to resume or start fresh (which depends on load_session_id
-        running first). This method just confirms the binary is installed.
+        Pi is a subprocess agent: the bridge owns the process. Spawning
+        happens in configure() where the stdin/stdout pipes are set up.
+        This method just confirms the binary is installed and ready.
         """
         self._workdir = workdir
         self._session_config = session_config
@@ -122,11 +122,11 @@ class PiAdapter(AgentAdapter):
         self.log.info("pi.validated", version=stdout.decode().strip())
 
     def get_process(self) -> "asyncio.subprocess.Process | None":
-        """Return None in entrypoint — bridge owns the Pi process."""
+        """Return None in supervisor — bridge owns the Pi process."""
         return self._process
 
     async def forward_logs(self) -> None:
-        """No-op in entrypoint. Bridge handles Pi's stderr directly."""
+        """No-op in supervisor. Bridge handles Pi's stderr directly."""
         pass
 
     # ─────────────────────────────────────────────────────────────────────
@@ -137,12 +137,12 @@ class PiAdapter(AgentAdapter):
     # in the adapter, invisible to the bridge.
     # ─────────────────────────────────────────────────────────────────────
 
-    def configure(self, http_client: httpx.AsyncClient, port: int) -> None:
-        """Initialize for bridge communication. Pi ignores http_client and port.
+    async def configure(self, http_client: httpx.AsyncClient, port: int) -> None:
+        """Spawn Pi subprocess and set up stdin/stdout pipes.
 
-        Pi subprocess is spawned lazily on first ensure_session() call,
-        because we need to know if there's a session to restore first
-        (load_session_id runs after configure in the bridge).
+        Pi ignores http_client and port (it's a subprocess, not HTTP).
+        After configure() returns, the bridge can talk to Pi via its
+        stdin/stdout pipes.
         """
         # Read config from environment (bridge is a separate process)
         self._provider = os.environ.get("PI_PROVIDER", os.environ.get("AGENT_PROVIDER", "anthropic"))
@@ -161,30 +161,39 @@ class PiAdapter(AgentAdapter):
         self._event_queue = asyncio.Queue()
         self._response_queue = asyncio.Queue()
 
-    async def ensure_session(self, repo_path: str) -> str:
-        """Spawn Pi if needed, return session ID.
+        # Check for a persisted session to restore (before bridge calls
+        # load_session_id — we need this now to pass to _spawn_pi).
+        session_path: str | None = None
+        if self.SESSION_PATH_FILE.exists():
+            path = self.SESSION_PATH_FILE.read_text().strip()
+            if path and Path(path).exists():
+                session_path = path
+                self._session_id = path
 
-        May resume an existing session (if load_session_id found one on disk)
-        or create a fresh one. The bridge doesn't care which — it just wants
-        a session ID back.
+        # Spawn Pi subprocess — whoever holds the pipes holds the conversation
+        self._pending_status.append(
+            self._make_status_event("spawning", f"Starting Pi ({self._provider}/{self._model})")
+        )
+        await self._spawn_pi(session_path=session_path)
+        self._pending_status.append(
+            self._make_status_event("ready", "Pi process ready")
+        )
+
+    async def create_session(self, repo_path: str) -> str:
+        """Create a new session in the running Pi process.
+
+        Only called when load_session_id() found nothing to resume.
+        Pi is already running (spawned in configure()), so this just
+        sends a command to the running process and returns a session ID.
         """
-        if not self._process or self._process.returncode is not None:
-            self.log.info("pi.creating_session", repo_path=repo_path)
-            self._pending_status.append(
-                self._make_status_event("spawning", f"Starting Pi ({self._provider}/{self._model})")
-            )
-            await self._spawn_pi(session_path=self._session_id)
-            self._pending_status.append(
-                self._make_status_event("ready", "Pi process ready")
-            )
+        self.log.info("pi.creating_session", repo_path=repo_path)
 
         # Query Pi for state to get session file path
         state = await self._send_command({"type": "get_state"})
         session_file = state.get("data", {}).get("sessionFile")
 
         if not session_file:
-            # No session — explicitly not passing --no-session should create one,
-            # but if it didn't, create one
+            # No session yet — ask Pi to create one
             await self._send_command({"type": "new_session"})
             state = await self._send_command({"type": "get_state"})
             session_file = state.get("data", {}).get("sessionFile")
@@ -209,9 +218,9 @@ class PiAdapter(AgentAdapter):
 
         MUST NOT yield execution_complete — the bridge handles that.
         """
-        # Drain any lifecycle status events queued during ensure_session/spawn.
-        # These happened BEFORE the prompt, but ensure_session() returns a string
-        # (not a stream), so this is the first chance to emit them. The user sees
+        # Drain any lifecycle status events queued during configure/spawn.
+        # These happened BEFORE the prompt, but configure() doesn't stream events,
+        # so this is the first chance to emit them. The user sees
         # them in order (spawning → ready → prompting) so it looks correct in the UI.
         while self._pending_status:
             yield self._pending_status.pop(0)
