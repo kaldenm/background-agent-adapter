@@ -36,7 +36,7 @@ def repo_image_env(base_env):
 def _make_supervisor(env_vars: dict):
     """Create a SandboxSupervisor with the given env vars patched in."""
     with patch.dict(os.environ, env_vars, clear=False):
-        from sandbox_runtime.entrypoint import SandboxSupervisor
+        from sandbox_runtime.supervisor import SandboxSupervisor
 
         return SandboxSupervisor()
 
@@ -53,7 +53,7 @@ class TestImageBuildMode:
 
         supervisor.run_setup_script = AsyncMock(return_value=True)
         supervisor.run_start_script = AsyncMock(return_value=True)
-        supervisor.start_opencode = AsyncMock()
+        supervisor.start_agent = AsyncMock()
         supervisor.start_bridge = AsyncMock()
         supervisor.monitor_processes = AsyncMock()
         supervisor.shutdown = AsyncMock()
@@ -68,7 +68,7 @@ class TestImageBuildMode:
         supervisor.run_setup_script.assert_called_once()
         supervisor.run_start_script.assert_not_called()
         # OpenCode and bridge should NOT be started in build mode
-        supervisor.start_opencode.assert_not_called()
+        supervisor.start_agent.assert_not_called()
         supervisor.start_bridge.assert_not_called()
         supervisor.monitor_processes.assert_not_called()
 
@@ -98,7 +98,7 @@ class TestImageBuildMode:
         with (
             patch.dict(os.environ, build_env, clear=False),
             patch(
-                "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+                "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
                 side_effect=fake_subprocess,
             ),
         ):
@@ -138,7 +138,7 @@ class TestImageBuildMode:
         supervisor.perform_git_sync = AsyncMock(return_value=True)
         supervisor.run_setup_script = AsyncMock(return_value=False)
         supervisor.run_start_script = AsyncMock(return_value=True)
-        supervisor.start_opencode = AsyncMock()
+        supervisor.start_agent = AsyncMock()
         supervisor.start_bridge = AsyncMock()
         supervisor.monitor_processes = AsyncMock()
         supervisor.shutdown = AsyncMock()
@@ -148,7 +148,7 @@ class TestImageBuildMode:
             await supervisor.run()
 
         supervisor._report_fatal_error.assert_called_once()
-        supervisor.start_opencode.assert_not_called()
+        supervisor.start_agent.assert_not_called()
         supervisor.start_bridge.assert_not_called()
 
     @pytest.mark.asyncio
@@ -172,7 +172,7 @@ class TestImageBuildMode:
         with (
             patch.dict(os.environ, build_env, clear=False),
             patch(
-                "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+                "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
                 side_effect=fake_subprocess,
             ),
         ):
@@ -201,7 +201,7 @@ class TestFromRepoImage:
 
         supervisor.run_setup_script = AsyncMock(return_value=True)
         supervisor.run_start_script = AsyncMock(return_value=True)
-        supervisor.start_opencode = AsyncMock()
+        supervisor.start_agent = AsyncMock()
         supervisor.start_bridge = AsyncMock()
         supervisor.monitor_processes = AsyncMock()
         supervisor.shutdown = AsyncMock()
@@ -221,7 +221,7 @@ class TestFromRepoImage:
 
         supervisor.run_setup_script = AsyncMock(return_value=True)
         supervisor.run_start_script = AsyncMock(return_value=True)
-        supervisor.start_opencode = AsyncMock()
+        supervisor.start_agent = AsyncMock()
         supervisor.start_bridge = AsyncMock()
         supervisor.monitor_processes = AsyncMock()
         supervisor.shutdown = AsyncMock()
@@ -240,7 +240,7 @@ class TestFromRepoImage:
         supervisor._update_existing_repo = AsyncMock(return_value=True)
 
         supervisor.run_start_script = AsyncMock(return_value=True)
-        supervisor.start_opencode = AsyncMock()
+        supervisor.start_agent = AsyncMock()
         supervisor.start_bridge = AsyncMock()
         supervisor.monitor_processes = AsyncMock()
         supervisor.shutdown = AsyncMock()
@@ -248,7 +248,7 @@ class TestFromRepoImage:
         with patch.dict(os.environ, repo_image_env, clear=False):
             await supervisor.run()
 
-        supervisor.start_opencode.assert_called_once()
+        supervisor.start_agent.assert_called_once()
         supervisor.start_bridge.assert_called_once()
 
     @pytest.mark.asyncio
@@ -259,7 +259,7 @@ class TestFromRepoImage:
         supervisor._update_existing_repo = AsyncMock(return_value=True)
         supervisor.run_setup_script = AsyncMock(return_value=True)
         supervisor.run_start_script = AsyncMock(return_value=False)
-        supervisor.start_opencode = AsyncMock()
+        supervisor.start_agent = AsyncMock()
         supervisor.start_bridge = AsyncMock()
         supervisor.monitor_processes = AsyncMock()
         supervisor.shutdown = AsyncMock()
@@ -269,7 +269,7 @@ class TestFromRepoImage:
             await supervisor.run()
 
         supervisor._report_fatal_error.assert_called_once()
-        supervisor.start_opencode.assert_not_called()
+        supervisor.start_agent.assert_not_called()
         supervisor.start_bridge.assert_not_called()
 
 
@@ -286,7 +286,7 @@ class TestNormalMode:
 
         supervisor.run_setup_script = AsyncMock(return_value=True)
         supervisor.run_start_script = AsyncMock(return_value=True)
-        supervisor.start_opencode = AsyncMock()
+        supervisor.start_agent = AsyncMock()
         supervisor.start_bridge = AsyncMock()
         supervisor.monitor_processes = AsyncMock()
         supervisor.shutdown = AsyncMock()
@@ -306,7 +306,7 @@ class TestNormalMode:
 
         supervisor.run_setup_script = AsyncMock(return_value=True)
         supervisor.run_start_script = AsyncMock(return_value=True)
-        supervisor.start_opencode = AsyncMock()
+        supervisor.start_agent = AsyncMock()
         supervisor.start_bridge = AsyncMock()
         supervisor.monitor_processes = AsyncMock()
         supervisor.shutdown = AsyncMock()
@@ -335,7 +335,7 @@ class TestNormalMode:
 
         supervisor.run_setup_script = AsyncMock(return_value=True)
         supervisor.run_start_script = AsyncMock(return_value=True)
-        supervisor.start_opencode = AsyncMock()
+        supervisor.start_agent = AsyncMock()
         supervisor.start_bridge = AsyncMock()
         supervisor.monitor_processes = AsyncMock()
         supervisor.shutdown = AsyncMock()
@@ -343,7 +343,7 @@ class TestNormalMode:
         with (
             patch.dict(os.environ, base_env, clear=False),
             patch(
-                "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+                "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
                 side_effect=fake_subprocess,
             ),
         ):
@@ -366,7 +366,7 @@ class TestSnapshotRestoreMode:
         supervisor._update_existing_repo = AsyncMock(return_value=True)
         supervisor.run_setup_script = AsyncMock(return_value=True)
         supervisor.run_start_script = AsyncMock(return_value=True)
-        supervisor.start_opencode = AsyncMock()
+        supervisor.start_agent = AsyncMock()
         supervisor.start_bridge = AsyncMock()
         supervisor.monitor_processes = AsyncMock()
         supervisor.shutdown = AsyncMock()
@@ -384,7 +384,7 @@ class TestSnapshotRestoreMode:
         supervisor._update_existing_repo = AsyncMock(return_value=True)
         supervisor.run_setup_script = AsyncMock(return_value=True)
         supervisor.run_start_script = AsyncMock(return_value=False)
-        supervisor.start_opencode = AsyncMock()
+        supervisor.start_agent = AsyncMock()
         supervisor.start_bridge = AsyncMock()
         supervisor.monitor_processes = AsyncMock()
         supervisor.shutdown = AsyncMock()
@@ -394,7 +394,7 @@ class TestSnapshotRestoreMode:
             await supervisor.run()
 
         supervisor._report_fatal_error.assert_called_once()
-        supervisor.start_opencode.assert_not_called()
+        supervisor.start_agent.assert_not_called()
 
 
 class TestUpdateExistingRepo:
@@ -416,7 +416,7 @@ class TestUpdateExistingRepo:
             return mock_proc
 
         with patch(
-            "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+            "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
             side_effect=fake_subprocess,
         ):
             result = await supervisor._update_existing_repo()
@@ -435,7 +435,7 @@ class TestUpdateExistingRepo:
         supervisor = _make_supervisor(base_env)
         supervisor.repo_path = tmp_path / "nonexistent"
 
-        with patch("sandbox_runtime.entrypoint.asyncio.create_subprocess_exec") as mock_exec:
+        with patch("sandbox_runtime.supervisor.asyncio.create_subprocess_exec") as mock_exec:
             result = await supervisor._update_existing_repo()
             mock_exec.assert_not_called()
 
@@ -458,7 +458,7 @@ class TestUpdateExistingRepo:
             return mock_proc
 
         with patch(
-            "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+            "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
             side_effect=fake_subprocess,
         ):
             result = await supervisor._update_existing_repo()
@@ -486,7 +486,7 @@ class TestUpdateExistingRepo:
             return mock_proc
 
         with patch(
-            "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+            "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
             side_effect=fake_subprocess,
         ):
             await supervisor._update_existing_repo()
@@ -511,7 +511,7 @@ class TestUpdateExistingRepo:
             return mock_proc
 
         with patch(
-            "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+            "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
             side_effect=fake_subprocess,
         ):
             await supervisor._update_existing_repo()
@@ -537,7 +537,7 @@ class TestUpdateExistingRepo:
             return mock_proc
 
         with patch(
-            "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+            "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
             side_effect=fake_subprocess,
         ):
             result = await supervisor._update_existing_repo()
@@ -561,7 +561,7 @@ class TestUpdateExistingRepo:
             return mock_proc
 
         with patch(
-            "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+            "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
             side_effect=fake_subprocess,
         ):
             result = await supervisor._update_existing_repo()
@@ -595,7 +595,7 @@ class TestPerformGitSync:
             return mock_proc
 
         with patch(
-            "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+            "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
             side_effect=fake_subprocess,
         ):
             result = await supervisor.perform_git_sync()
@@ -627,7 +627,7 @@ class TestPerformGitSync:
             return mock_proc
 
         with patch(
-            "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+            "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
             side_effect=fake_subprocess,
         ):
             result = await supervisor.perform_git_sync()
@@ -658,7 +658,7 @@ class TestPerformGitSync:
             return mock_proc
 
         with patch(
-            "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+            "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
             side_effect=fake_subprocess,
         ):
             await supervisor.perform_git_sync()
@@ -701,7 +701,7 @@ class TestPerformGitSync:
             return mock_proc
 
         with patch(
-            "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+            "sandbox_runtime.supervisor.asyncio.create_subprocess_exec",
             side_effect=fake_subprocess,
         ):
             await getattr(supervisor, method_name)(*args)

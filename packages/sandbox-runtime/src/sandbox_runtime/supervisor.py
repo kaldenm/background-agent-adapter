@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 """
-Sandbox entrypoint - manages agent server and bridge lifecycle.
+Sandbox Supervisor — the daemon that runs inside the sandbox.
 
-Runs as PID 1 inside the sandbox. Responsibilities:
-1. Perform git sync with latest code
-2. Run repo hooks (setup/start) based on boot mode
-3. Start agent server (via pluggable adapter)
-4. Start bridge process for control plane communication
-5. Monitor processes and restart on crash with exponential backoff
-6. Handle graceful shutdown on SIGTERM/SIGINT
+One per sandbox. Creates the workspace, starts the agent, starts the bridge,
+then sits in a loop making sure everything is still alive. That's it.
+
+Agent-agnostic: calls adapter methods, never knows which agent is running.
+
+What it does:
+1. Clone the repo (make a place for work to happen)
+2. Run setup/start hooks
+3. Start the agent (via adapter)
+4. Start the bridge (connects agent to session server)
+5. Monitor processes, restart on crash
+6. Shut down cleanly on signal
 """
 
 import asyncio
 import json
 import os
 import re
-import shutil
 import signal
 import time
 from pathlib import Path
@@ -34,16 +38,13 @@ class SandboxSupervisor:
     """
     Supervisor process for sandbox lifecycle management.
 
-    Manages:
-    - Git synchronization with base branch
-    - OpenCode server process
-    - Bridge process for control plane communication
-    - Process monitoring with crash recovery
+    Agent-agnostic: never imports a specific adapter, never touches agent
+    config directories, never knows how the agent communicates. The full
+    agent interaction is: adapter.install() → adapter.prepare() →
+    adapter.get_process() for monitoring → adapter.shutdown().
     """
 
     # Configuration
-    OPENCODE_PORT = 4096  # default, overridden by adapter.PORT
-    HEALTH_CHECK_TIMEOUT = 30.0
     MAX_RESTARTS = 5
     BACKOFF_BASE = 2.0
     BACKOFF_MAX = 60.0
@@ -53,14 +54,14 @@ class SandboxSupervisor:
     DEFAULT_START_TIMEOUT_SECONDS = 120
     CLONE_DEPTH_COMMITS = 100
     SIDECAR_TIMEOUT_SECONDS = 5
-    MCP_PACKAGE_INSTALL_TIMEOUT_SECONDS = 180
 
     def __init__(self):
-        # Load agent adapter
+        # Load agent adapter by name (e.g. "opencode", "pi"). The same adapter
+        # class is instantiated separately in the bridge subprocess — each
+        # process gets its own instance with its own state.
         agent_name = os.environ.get("AGENT_ADAPTER", "opencode")
         self.adapter: AgentAdapter = load_adapter(agent_name)
 
-        self._opencode_process: asyncio.subprocess.Process | None = None
         self.bridge_process: asyncio.subprocess.Process | None = None
         self.code_server_process: asyncio.subprocess.Process | None = None
         self.ttyd_process: asyncio.subprocess.Process | None = None
@@ -89,8 +90,6 @@ class SandboxSupervisor:
         # Paths
         self.workspace_path = Path("/workspace")
         self.repo_path = self.workspace_path / self.repo_name
-        # Backward compat: session_id_file (now managed by adapter)
-        self.session_id_file = Path("/tmp/opencode-session-id")
 
         # Logger
         session_id = self.session_config.get("session_id", "")
@@ -299,122 +298,7 @@ class SandboxSupervisor:
 
         return await self._update_existing_repo()
 
-    def _install_tools(self, workdir: Path) -> None:
-        """Copy custom tools into the .opencode/tool directory for OpenCode to discover."""
-        opencode_dir = workdir / ".opencode"
-        tool_dest = opencode_dir / "tool"
 
-        # Legacy tool (inspect-plugin.js → create-pull-request.js)
-        legacy_tool = Path("/app/sandbox_runtime/plugins/inspect-plugin.js")
-        # New tools directory
-        tools_dir = Path("/app/sandbox_runtime/tools")
-
-        has_tools = legacy_tool.exists() or tools_dir.exists()
-        if not has_tools:
-            return
-
-        tool_dest.mkdir(parents=True, exist_ok=True)
-
-        if legacy_tool.exists():
-            shutil.copy(legacy_tool, tool_dest / "create-pull-request.js")
-
-        # Copy all .js files from tools/ — these must export tool() for OpenCode
-        if tools_dir.exists():
-            for tool_file in tools_dir.iterdir():
-                if tool_file.is_file() and tool_file.suffix == ".js":
-                    shutil.copy(tool_file, tool_dest / tool_file.name)
-
-        # Copy pre-built deps (package.json, package-lock.json, node_modules)
-        # from the image staging directory.  This gives OpenCode a lockfile
-        # that matches the declared dependencies so Npm.install() finds
-        # everything in sync and skips arborist reify() entirely.
-        deps_cache = Path("/app/opencode-deps")
-        for name in ("package.json", "package-lock.json"):
-            src = deps_cache / name
-            dest = opencode_dir / name
-            if src.exists() and not dest.exists():
-                shutil.copy2(src, dest)
-        cached_modules = deps_cache / "node_modules"
-        local_modules = opencode_dir / "node_modules"
-        if cached_modules.is_dir() and not local_modules.exists():
-            shutil.copytree(cached_modules, local_modules, symlinks=True)
-
-    def _install_bin_scripts(self) -> None:
-        """Install standalone CLI scripts into /usr/local/bin.
-
-        Scripts in bin/ are standalone CLIs (not OpenCode tool plugins) and must
-        NOT be placed in .opencode/tool/ — OpenCode would import() them during
-        tool discovery, executing module-level code with the parent process argv.
-        """
-        bin_dir = Path("/app/sandbox_runtime/bin")
-        if not bin_dir.is_dir():
-            return
-
-        for script in bin_dir.iterdir():
-            if script.is_file() and script.suffix == ".js":
-                dest = Path("/usr/local/bin") / script.stem
-                shutil.copy(script, dest)
-                dest.chmod(0o755)
-                self.log.info("bin.installed", script=script.stem)
-
-    def _install_skills(self, workdir: Path) -> None:
-        """Copy bundled Skills into the .opencode/skills directory."""
-        skills_dir = Path("/app/sandbox_runtime/skills")
-        if not skills_dir.is_dir():
-            return
-
-        skills_dest = workdir / ".opencode" / "skills"
-        installed_any = False
-
-        for skill_dir in skills_dir.iterdir():
-            skill_file = skill_dir / "SKILL.md"
-            if not skill_dir.is_dir() or not skill_file.exists():
-                continue
-
-            dest_dir = skills_dest / skill_dir.name
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy(skill_file, dest_dir / "SKILL.md")
-            installed_any = True
-
-        if installed_any:
-            self.log.info("opencode.skills_installed", skills_path=str(skills_dest))
-
-    def _setup_openai_oauth(self) -> None:
-        """Write OpenCode auth.json for ChatGPT OAuth if refresh token is configured."""
-        refresh_token = os.environ.get("OPENAI_OAUTH_REFRESH_TOKEN")
-        if not refresh_token:
-            return
-
-        try:
-            auth_dir = Path.home() / ".local" / "share" / "opencode"
-            auth_dir.mkdir(parents=True, exist_ok=True)
-
-            openai_entry = {
-                "type": "oauth",
-                "refresh": "managed-by-control-plane",
-                "access": "",
-                "expires": 0,
-            }
-
-            account_id = os.environ.get("OPENAI_OAUTH_ACCOUNT_ID")
-            if account_id:
-                openai_entry["accountId"] = account_id
-
-            auth_file = auth_dir / "auth.json"
-            tmp_file = auth_dir / ".auth.json.tmp"
-
-            # Write to a temp file created with 0o600 from the start, then
-            # atomically rename so the target is never world-readable.
-            fd = os.open(str(tmp_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            try:
-                os.write(fd, json.dumps({"openai": openai_entry}).encode())
-            finally:
-                os.close(fd)
-            tmp_file.replace(auth_file)
-
-            self.log.info("openai_oauth.setup")
-        except Exception as e:
-            self.log.warn("openai_oauth.setup_error", exc=e)
 
     async def start_code_server(self) -> None:
         """Start code-server for browser-based VS Code editing."""
@@ -456,107 +340,7 @@ class SandboxSupervisor:
         except Exception as e:
             self.log.warn("code_server.log_forward_error", exc=e)
 
-    def _resolve_mcp_servers(self) -> list[dict]:
-        """Resolve MCP servers from session config."""
-        return self.session_config.get("mcp_servers") or []
 
-    # Validates npm package names before passing to `npm install -g`.
-    # Accepts: "package", "@scope/package", "package@1.0.0", "@scope/package@1.0.0"
-    # Rejects anything with shell metacharacters or path traversal sequences.
-    # NOTE: if a legitimate package is rejected, widen this regex rather than
-    # removing the check — the package name comes from user-supplied config.
-    _NPM_PKG_RE = re.compile(r"^(@[\w.-]+/)?[\w][\w.-]*(@[\w.-]+)?$")
-
-    async def _install_mcp_packages(self, servers: list[dict]) -> None:
-        """Pre-install npm packages for local MCP servers that use npx."""
-        packages: list[str] = []
-        for server in servers:
-            if server.get("type") == "remote":
-                continue
-            cmd = server.get("command", [])
-            if not cmd:
-                continue
-            parts = [c for c in cmd if isinstance(c, str)]
-            if not parts or parts[0] != "npx":
-                continue
-            # Extract package name: prefer -p/--package flag, else first non-flag arg
-            pkg: str | None = None
-            for i, part in enumerate(parts):
-                if part in ("-p", "--package") and i + 1 < len(parts):
-                    pkg = parts[i + 1]
-                    break
-            if pkg is None:
-                non_flags = [p for p in parts[1:] if not p.startswith("-")]
-                pkg = non_flags[0] if non_flags else None
-
-            if pkg:
-                if self._NPM_PKG_RE.match(pkg):
-                    packages.append(pkg)
-                else:
-                    self.log.warn(
-                        "mcp.invalid_package_name",
-                        package=pkg,
-                        note="package skipped — npx will attempt download at runtime",
-                    )
-
-        packages = list(dict.fromkeys(packages))  # deduplicate, preserve order
-        if not packages:
-            return
-
-        self.log.info("mcp.install_packages", packages=packages)
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "npm",
-                "install",
-                "-g",
-                *packages,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=self.MCP_PACKAGE_INSTALL_TIMEOUT_SECONDS
-            )
-            if proc.returncode == 0:
-                self.log.info("mcp.packages_installed", packages=packages)
-            else:
-                self.log.warn(
-                    "mcp.packages_install_failed",
-                    packages=packages,
-                    stderr=(stderr or b"").decode()[:500],
-                )
-        except TimeoutError:
-            self.log.warn(
-                "mcp.packages_install_timeout",
-                packages=packages,
-                timeout_seconds=self.MCP_PACKAGE_INSTALL_TIMEOUT_SECONDS,
-            )
-            proc.kill()
-            await proc.wait()
-        except Exception as e:
-            self.log.warn("mcp.packages_install_error", packages=packages, exc=str(e))
-
-    def _build_mcp_config(self, servers: list[dict]) -> dict[str, dict]:
-        """Convert MCP server list to OpenCode mcp config format."""
-        config: dict[str, dict] = {}
-        for server in servers:
-            name = server.get("name", "")
-            if not name:
-                continue
-            if server.get("type") == "remote":
-                entry: dict = {"type": "remote", "url": server.get("url", "")}
-                auth_headers = server.get("headers") or server.get("env") or {}
-                if auth_headers:
-                    entry["headers"] = auth_headers
-                config[name] = entry
-            else:
-                entry = {
-                    "type": "local",
-                    "command": server.get("command", []),
-                }
-                if server.get("env"):
-                    entry["environment"] = server["env"]
-                config[name] = entry
-        return config
 
     async def start_ttyd(self) -> None:
         """Start ttyd web terminal if TERMINAL_ENABLED is set."""
@@ -650,163 +434,24 @@ class SandboxSupervisor:
         self.log.warn("port_readiness.timeout", port=port, timeout=timeout_seconds)
         return False
 
-    # Backward compat aliases
-    @property
-    def opencode_process(self) -> "asyncio.subprocess.Process | None":
-        """Backward compat: return agent process."""
-        return self._opencode_process
+    async def start_agent(self) -> None:
+        """Start the coding agent via the adapter.
 
-    @opencode_process.setter
-    def opencode_process(self, value: "asyncio.subprocess.Process | None") -> None:
-        """Backward compat."""
-        self._opencode_process = value
+        install() handles file setup (tools, config, plugins).
+        prepare() handles process spawning and health checks.
 
-    @property
-    def opencode_ready(self) -> asyncio.Event:
-        """Backward compat: alias for agent_ready."""
-        return self.agent_ready
-
-    @opencode_ready.setter
-    def opencode_ready(self, value: asyncio.Event) -> None:
-        """Backward compat: set agent_ready."""
-        self.agent_ready = value
-
-    async def start_opencode(self) -> None:
-        """Start agent server with configuration.
-
-        This method keeps the original implementation so that existing tests
-        which mock its sub-methods (_setup_openai_oauth, _install_tools, etc.)
-        continue to work. In production the adapter handles all of this.
+        After this returns, server agents have a process running (accessible
+        via adapter.get_process()). Subprocess agents only validated their
+        binary here — the bridge spawns them later in configure() because
+        it needs to own the stdin/stdout pipes.
         """
-        from .adapters.opencode import OpenCodeAdapter
-
-        # For non-OpenCode adapters, use the generic adapter interface
-        if not isinstance(self.adapter, OpenCodeAdapter):
-            workdir = self.workspace_path
-            if self.repo_path.exists() and (self.repo_path / ".git").exists():
-                workdir = self.repo_path
-            await self.adapter.install(workdir, self.session_config)
-            await self.adapter.start(workdir, self.session_config)
-            self.agent_ready.set()
-            self.log.info("agent.ready", adapter=type(self.adapter).__name__)
-            return
-
-        self._setup_openai_oauth()
-        self.log.info("opencode.start")
-
-        # Build OpenCode config from session settings
-        provider = self.session_config.get("provider", "anthropic")
-        model = self.session_config.get("model", "claude-sonnet-4-6")
-        opencode_config: dict = {
-            "model": f"{provider}/{model}",
-            "permission": {"*": {"*": "allow"}},
-        }
-
-        # Register custom model definitions so OpenCode accepts model IDs
-        # that aren't yet in the models.dev registry.
-        from .adapters.opencode import OpenCodeAdapter
-
-        if OpenCodeAdapter.CUSTOM_ANTHROPIC_MODELS:
-            opencode_config["provider"] = {
-                "anthropic": {
-                    "models": OpenCodeAdapter.CUSTOM_ANTHROPIC_MODELS,
-                },
-            }
-
-        # Inject MCP servers
-        mcp_servers = self._resolve_mcp_servers()
-        if mcp_servers:
-            await self._install_mcp_packages(mcp_servers)
-            mcp_config = self._build_mcp_config(mcp_servers)
-            if mcp_config:
-                opencode_config["mcp"] = mcp_config
-                self.log.info("mcp.configured", count=len(mcp_config))
-
-        # Determine working directory
         workdir = self.workspace_path
         if self.repo_path.exists() and (self.repo_path / ".git").exists():
             workdir = self.repo_path
-
-        self._install_tools(workdir)
-        self._install_skills(workdir)
-        self._install_bin_scripts()
-
-        # Deploy codex auth proxy plugin if OpenAI OAuth is configured
-        opencode_dir = workdir / ".opencode"
-        plugin_source = Path("/app/sandbox_runtime/plugins/codex-auth-plugin.js")
-        if plugin_source.exists() and os.environ.get("OPENAI_OAUTH_REFRESH_TOKEN"):
-            plugin_dir = opencode_dir / "plugins"
-            plugin_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy(plugin_source, plugin_dir / "codex-auth-plugin.js")
-            self.log.info("openai_oauth.plugin_deployed")
-
-        env = {
-            **os.environ,
-            "OPENCODE_CONFIG_CONTENT": json.dumps(opencode_config),
-            "OPENCODE_CLIENT": "serve",
-        }
-
-        # Start OpenCode server in the repo directory
-        self._opencode_process = await asyncio.create_subprocess_exec(
-            "opencode",
-            "serve",
-            "--port",
-            str(self.OPENCODE_PORT),
-            "--hostname",
-            "0.0.0.0",
-            "--print-logs",
-            cwd=workdir,
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-
-        # Store process in adapter if it's OpenCode
-        from .adapters.opencode import OpenCodeAdapter
-        if isinstance(self.adapter, OpenCodeAdapter):
-            self.adapter.process = self._opencode_process
-
-        # Start log forwarder
-        asyncio.create_task(self._forward_opencode_logs())
-
-        # Wait for health check
-        await self._wait_for_health()
+        await self.adapter.install(workdir, self.session_config)
+        await self.adapter.prepare(workdir, self.session_config)
         self.agent_ready.set()
-        self.log.info("opencode.ready")
-
-    async def _forward_opencode_logs(self) -> None:
-        """Forward OpenCode stdout to supervisor stdout."""
-        if not self._opencode_process or not self._opencode_process.stdout:
-            return
-
-        try:
-            async for line in self._opencode_process.stdout:
-                print(f"[opencode] {line.decode().rstrip()}")
-        except Exception as e:
-            print(f"[supervisor] Log forwarding error: {e}")
-
-    async def _wait_for_health(self) -> None:
-        """Poll health endpoint until server is ready."""
-        health_url = f"http://localhost:{self.OPENCODE_PORT}/global/health"
-        start_time = time.time()
-
-        async with httpx.AsyncClient() as client:
-            while time.time() - start_time < self.HEALTH_CHECK_TIMEOUT:
-                if self.shutdown_event.is_set():
-                    raise RuntimeError("Shutdown requested during startup")
-
-                try:
-                    resp = await client.get(health_url, timeout=2.0)
-                    if resp.status_code == 200:
-                        return
-                except httpx.ConnectError:
-                    pass
-                except Exception as e:
-                    self.log.debug("opencode.health_check_error", exc=e)
-
-                await asyncio.sleep(0.5)
-
-        raise RuntimeError("OpenCode server failed to become healthy")
+        self.log.info("agent.ready", adapter=type(self.adapter).__name__)
 
     async def start_bridge(self) -> None:
         """Start the agent bridge process."""
@@ -816,7 +461,9 @@ class SandboxSupervisor:
             self.log.info("bridge.skip", reason="no_control_plane_url")
             return
 
-        # Wait for agent to be ready
+        # Wait for agent to be ready. For server agents this waits for the
+        # health check; for subprocess agents start() is instant (validation
+        # only) so this returns immediately.
         await self.agent_ready.wait()
 
         # Get session_id from config (required for WebSocket connection)
@@ -827,7 +474,7 @@ class SandboxSupervisor:
 
         # Pass adapter config via environment
         agent_name = os.environ.get("AGENT_ADAPTER", "opencode")
-        agent_port = str(getattr(self.adapter, 'PORT', self.OPENCODE_PORT))
+        agent_port = str(getattr(self.adapter, 'PORT', 0))
         bridge_env = {
             **os.environ,
             "AGENT_ADAPTER": agent_name,
@@ -892,21 +539,23 @@ class SandboxSupervisor:
         ttyd_proxy_restart_count = 0
 
         while not self.shutdown_event.is_set():
-            # Check OpenCode/agent process (only for adapters that run in entrypoint)
-            agent_process = self._opencode_process or self.adapter.get_process()
+            # Check agent process. Returns None for subprocess agents where
+            # the bridge owns the process — crash monitoring happens there.
+            agent_process = self.adapter.get_process()
             if agent_process and agent_process.returncode is not None:
                 exit_code = agent_process.returncode
                 restart_count += 1
 
                 self.log.error(
-                    "opencode.crash",
+                    "agent.crash",
                     exit_code=exit_code,
                     restart_count=restart_count,
+                    adapter=type(self.adapter).__name__,
                 )
 
                 if restart_count > self.MAX_RESTARTS:
                     self.log.error(
-                        "opencode.max_restarts",
+                        "agent.max_restarts",
                         restart_count=restart_count,
                     )
                     await self._report_fatal_error(
@@ -918,14 +567,14 @@ class SandboxSupervisor:
                 # Exponential backoff
                 delay = min(self.BACKOFF_BASE**restart_count, self.BACKOFF_MAX)
                 self.log.info(
-                    "opencode.restart",
+                    "agent.restart",
                     delay_s=round(delay, 1),
                     restart_count=restart_count,
                 )
 
                 await asyncio.sleep(delay)
                 self.agent_ready.clear()
-                await self.start_opencode()
+                await self.start_agent()
 
             # Check bridge process
             if self.bridge_process and self.bridge_process.returncode is not None:
@@ -1235,7 +884,7 @@ class SandboxSupervisor:
             loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(self._handle_signal(s)))
 
         git_sync_success = False
-        opencode_ready = False
+        agent_ready = False
         try:
             # Phase 1: Git sync
             if restored_from_snapshot:
@@ -1297,10 +946,10 @@ class SandboxSupervisor:
                         self.log.warn("ttyd_proxy.start_failed", exc=e)
 
             # Phase 4: Start agent via adapter
-            await self.start_opencode()
-            opencode_ready = True
+            await self.start_agent()
+            agent_ready = True
 
-            # Phase 5: Start bridge (after OpenCode is ready)
+            # Phase 5: Start bridge (after agent is ready)
             await self.start_bridge()
 
             # Emit sandbox.startup wide event
@@ -1315,7 +964,7 @@ class SandboxSupervisor:
                 git_sync_success=git_sync_success,
                 setup_success=setup_success,
                 start_success=start_success,
-                opencode_ready=opencode_ready,
+                agent_ready=agent_ready,
                 duration_ms=duration_ms,
                 outcome="success",
             )
@@ -1377,13 +1026,12 @@ class SandboxSupervisor:
             except TimeoutError:
                 self.ttyd_process.kill()
 
-        # Terminate agent/OpenCode
-        if self._opencode_process and self._opencode_process.returncode is None:
-            self._opencode_process.terminate()
-            try:
-                await asyncio.wait_for(self._opencode_process.wait(), timeout=10.0)
-            except TimeoutError:
-                self._opencode_process.kill()
+        # Terminate agent via adapter — it handles its own terminate/wait/kill
+        # logic internally, unlike the sidecars above which we manage directly.
+        try:
+            await self.adapter.shutdown()
+        except Exception as e:
+            self.log.warn("agent.shutdown_error", exc=e)
 
         self.log.info("supervisor.shutdown_complete")
 

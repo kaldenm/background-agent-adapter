@@ -3,7 +3,7 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from sandbox_runtime.entrypoint import SandboxSupervisor
+from sandbox_runtime.supervisor import SandboxSupervisor
 
 
 def _make_supervisor(tmp_path) -> SandboxSupervisor:
@@ -216,7 +216,7 @@ class TestStartInRunStrict:
         sup.perform_git_sync = AsyncMock(return_value=True)
         sup.run_setup_script = AsyncMock(return_value=True)
         sup.run_start_script = AsyncMock(return_value=False)
-        sup.start_opencode = AsyncMock()
+        sup.start_agent = AsyncMock()
         sup.start_bridge = AsyncMock()
         sup.monitor_processes = AsyncMock()
         sup.shutdown = AsyncMock()
@@ -227,5 +227,5 @@ class TestStartInRunStrict:
             await sup.run()
 
         sup._report_fatal_error.assert_called_once()
-        sup.start_opencode.assert_not_called()
+        sup.start_agent.assert_not_called()
         sup.start_bridge.assert_not_called()

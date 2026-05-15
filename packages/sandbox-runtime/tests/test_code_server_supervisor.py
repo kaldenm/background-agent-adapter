@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sandbox_runtime.entrypoint import SandboxSupervisor
+from sandbox_runtime.supervisor import SandboxSupervisor
 
 
 class TestCodeServerMonitorRestart:
@@ -28,11 +28,15 @@ class TestCodeServerMonitorRestart:
         proc.returncode = returncode
         return proc
 
+    def _set_agent_process(self, sup, proc):
+        """Set the adapter's process so monitor_processes sees it."""
+        sup.adapter.get_process = MagicMock(return_value=proc)
+
     @pytest.mark.asyncio
     async def test_code_server_crash_does_not_set_shutdown(self):
         """code-server crash should NOT trigger supervisor shutdown."""
         sup = self._make_supervisor()
-        sup.opencode_process = self._fake_process(returncode=None)
+        self._set_agent_process(sup, self._fake_process(returncode=None))
         sup.bridge_process = self._fake_process(returncode=None)
 
         # code-server exited with code 1
@@ -58,7 +62,7 @@ class TestCodeServerMonitorRestart:
     async def test_code_server_restart_exception_is_caught(self):
         """If start_code_server() raises, the supervisor continues running."""
         sup = self._make_supervisor()
-        sup.opencode_process = self._fake_process(returncode=None)
+        self._set_agent_process(sup, self._fake_process(returncode=None))
         sup.bridge_process = self._fake_process(returncode=None)
         sup.code_server_process = self._fake_process(returncode=1)
 
@@ -91,7 +95,7 @@ class TestCodeServerMonitorRestart:
     async def test_code_server_max_restarts_gives_up(self):
         """After MAX_RESTARTS, code-server is abandoned (process set to None)."""
         sup = self._make_supervisor()
-        sup.opencode_process = self._fake_process(returncode=None)
+        self._set_agent_process(sup, self._fake_process(returncode=None))
         sup.bridge_process = self._fake_process(returncode=None)
 
         # code-server always crashes
@@ -101,8 +105,6 @@ class TestCodeServerMonitorRestart:
 
         # After code-server gives up, the loop continues (non-fatal).
         # Terminate after enough iterations to observe the give-up behavior.
-        # Each restart cycle has 2 sleeps (backoff + 1.0s monitor interval),
-        # so we need at least MAX_RESTARTS * 2 + extra to see all restarts.
         sleep_count = 0
 
         async def counting_sleep(delay):

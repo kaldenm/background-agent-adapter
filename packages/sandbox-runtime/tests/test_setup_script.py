@@ -3,7 +3,7 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from sandbox_runtime.entrypoint import SandboxSupervisor
+from sandbox_runtime.supervisor import SandboxSupervisor
 
 
 def _make_supervisor(tmp_path) -> SandboxSupervisor:
@@ -281,7 +281,7 @@ class TestSetupInRun:
         sup.perform_git_sync = AsyncMock(return_value=True)
         sup.run_setup_script = AsyncMock(return_value=True)
         sup.run_start_script = AsyncMock(return_value=True)
-        sup.start_opencode = AsyncMock()
+        sup.start_agent = AsyncMock()
         sup.start_bridge = AsyncMock()
         sup.monitor_processes = AsyncMock()
 
@@ -295,13 +295,13 @@ class TestSetupInRun:
 
         sup.run_setup_script.assert_called_once()
 
-        # Verify ordering: run_setup_script before run_start_script before start_opencode
+        # Verify ordering: run_setup_script before run_start_script before start_agent
         call_order = []
-        for name in ["run_setup_script", "run_start_script", "start_opencode"]:
+        for name in ["run_setup_script", "run_start_script", "start_agent"]:
             mock = getattr(sup, name)
             if mock.call_count > 0:
                 call_order.append(name)
-        assert call_order == ["run_setup_script", "run_start_script", "start_opencode"]
+        assert call_order == ["run_setup_script", "run_start_script", "start_agent"]
 
     async def test_run_skips_setup_on_snapshot_restore(self, tmp_path):
         sup = _make_supervisor(tmp_path)
@@ -310,7 +310,7 @@ class TestSetupInRun:
         sup._quick_git_fetch = AsyncMock()
         sup.run_setup_script = AsyncMock(return_value=True)
         sup.run_start_script = AsyncMock(return_value=True)
-        sup.start_opencode = AsyncMock()
+        sup.start_agent = AsyncMock()
         sup.start_bridge = AsyncMock()
         sup.monitor_processes = AsyncMock()
 

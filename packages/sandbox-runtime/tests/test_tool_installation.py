@@ -1,26 +1,16 @@
-"""Tests for _install_tools() and _install_bin_scripts() in SandboxSupervisor."""
+"""Tests for _install_tools(), _install_bin_scripts(), and _install_skills() in OpenCodeAdapter."""
 
 import json
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
-from sandbox_runtime.entrypoint import SandboxSupervisor
+from sandbox_runtime.adapters.opencode import OpenCodeAdapter
 
 
-def _make_supervisor() -> SandboxSupervisor:
-    """Create a SandboxSupervisor with default test config."""
-    with patch.dict(
-        "os.environ",
-        {
-            "SANDBOX_ID": "test-sandbox",
-            "CONTROL_PLANE_URL": "https://cp.example.com",
-            "SANDBOX_AUTH_TOKEN": "tok",
-            "REPO_OWNER": "acme",
-            "REPO_NAME": "app",
-        },
-    ):
-        return SandboxSupervisor()
+def _make_adapter() -> OpenCodeAdapter:
+    """Create an OpenCodeAdapter for testing."""
+    return OpenCodeAdapter()
 
 
 @contextmanager
@@ -32,8 +22,8 @@ def _patch_paths(
     bin_dest: Path | str = "/nonexistent",
     deps_cache: Path | str = "/nonexistent",
 ):
-    """Patch entrypoint Path() calls to redirect legacy, tools, skills, and bin paths."""
-    with patch("sandbox_runtime.entrypoint.Path") as MockPath:
+    """Patch Path() calls to redirect legacy, tools, skills, and bin paths."""
+    with patch("sandbox_runtime.adapters.opencode.Path") as MockPath:
         MockPath.side_effect = lambda p: Path(
             str(p)
             .replace("/app/sandbox_runtime/plugins/inspect-plugin.js", str(legacy))
@@ -51,7 +41,7 @@ class TestInstallTools:
 
     def test_legacy_tool_copied(self, tmp_path):
         """inspect-plugin.js should be copied as create-pull-request.js."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
         workdir = tmp_path / "workspace"
         workdir.mkdir()
 
@@ -60,7 +50,7 @@ class TestInstallTools:
         legacy_tool.write_text("// legacy tool")
 
         with _patch_paths(legacy=legacy_tool, tools=tmp_path / "no-tools"):
-            sup._install_tools(workdir)
+            adapter._install_tools(workdir)
 
         dest = workdir / ".opencode" / "tool" / "create-pull-request.js"
         assert dest.exists()
@@ -68,7 +58,7 @@ class TestInstallTools:
 
     def test_tools_dir_files_copied(self, tmp_path):
         """All .js files from tools/ directory should be copied."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
         workdir = tmp_path / "workspace"
         workdir.mkdir()
 
@@ -80,7 +70,7 @@ class TestInstallTools:
         (tools_dir / "cancel-task.js").write_text("// cancel task")
 
         with _patch_paths(legacy=tmp_path / "no-legacy", tools=tools_dir):
-            sup._install_tools(workdir)
+            adapter._install_tools(workdir)
 
         tool_dest = workdir / ".opencode" / "tool"
         assert (tool_dest / "_bridge-client.js").exists()
@@ -91,7 +81,7 @@ class TestInstallTools:
 
     def test_non_js_files_skipped(self, tmp_path):
         """Non-.js files in tools/ directory should not be copied."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
         workdir = tmp_path / "workspace"
         workdir.mkdir()
 
@@ -102,7 +92,7 @@ class TestInstallTools:
         (tools_dir / "helper.py").write_text("# python")
 
         with _patch_paths(legacy=tmp_path / "no-legacy", tools=tools_dir):
-            sup._install_tools(workdir)
+            adapter._install_tools(workdir)
 
         tool_dest = workdir / ".opencode" / "tool"
         assert (tool_dest / "spawn-task.js").exists()
@@ -111,7 +101,7 @@ class TestInstallTools:
 
     def test_graceful_without_tools_dir(self, tmp_path):
         """Only legacy tool should be copied when tools/ doesn't exist."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
         workdir = tmp_path / "workspace"
         workdir.mkdir()
 
@@ -120,7 +110,7 @@ class TestInstallTools:
         legacy_tool.write_text("// legacy")
 
         with _patch_paths(legacy=legacy_tool, tools=tmp_path / "no-tools"):
-            sup._install_tools(workdir)
+            adapter._install_tools(workdir)
 
         tool_dest = workdir / ".opencode" / "tool"
         assert (tool_dest / "create-pull-request.js").exists()
@@ -129,18 +119,18 @@ class TestInstallTools:
 
     def test_no_tools_at_all(self, tmp_path):
         """Should be a no-op when neither legacy tool nor tools/ exist."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
         workdir = tmp_path / "workspace"
         workdir.mkdir()
 
         with _patch_paths(legacy=tmp_path / "no-legacy", tools=tmp_path / "no-tools"):
-            sup._install_tools(workdir)
+            adapter._install_tools(workdir)
 
         assert not (workdir / ".opencode").exists()
 
     def test_copies_prebuilt_deps_from_cache(self, tmp_path):
         """Should copy package.json, package-lock.json, and node_modules from image cache."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
         workdir = tmp_path / "workspace"
         workdir.mkdir()
 
@@ -163,7 +153,7 @@ class TestInstallTools:
         (nm / "index.js").write_text("module.exports = {}")
 
         with _patch_paths(legacy=legacy_tool, tools=tmp_path / "no-tools", deps_cache=deps_cache):
-            sup._install_tools(workdir)
+            adapter._install_tools(workdir)
 
         opencode_dir = workdir / ".opencode"
         # All three artefacts should be present
@@ -176,7 +166,7 @@ class TestInstallTools:
 
     def test_does_not_overwrite_existing_files(self, tmp_path):
         """Pre-existing package.json or node_modules in .opencode/ should not be overwritten."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
         workdir = tmp_path / "workspace"
         workdir.mkdir()
 
@@ -198,14 +188,14 @@ class TestInstallTools:
         existing_pkg.write_text('{"name": "existing"}')
 
         with _patch_paths(legacy=legacy_tool, tools=tmp_path / "no-tools", deps_cache=deps_cache):
-            sup._install_tools(workdir)
+            adapter._install_tools(workdir)
 
         # Existing package.json should be preserved, not overwritten by cache
         assert existing_pkg.read_text() == '{"name": "existing"}'
 
     def test_legacy_and_tools_dir_combined(self, tmp_path):
         """Both legacy tool and tools/ directory files should be installed together."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
         workdir = tmp_path / "workspace"
         workdir.mkdir()
 
@@ -219,7 +209,7 @@ class TestInstallTools:
         (tools_dir / "_bridge-client.js").write_text("// bridge")
 
         with _patch_paths(legacy=legacy_tool, tools=tools_dir):
-            sup._install_tools(workdir)
+            adapter._install_tools(workdir)
 
         tool_dest = workdir / ".opencode" / "tool"
         assert (tool_dest / "create-pull-request.js").exists()
@@ -234,7 +224,7 @@ class TestInstallBinScripts:
 
     def test_scripts_installed_to_bin(self, tmp_path):
         """JS scripts in bin/ should be copied to /usr/local/bin/ without .js extension."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
 
         src = tmp_path / "app" / "sandbox_runtime" / "bin"
         src.mkdir(parents=True)
@@ -246,7 +236,7 @@ class TestInstallBinScripts:
         with _patch_paths(
             legacy=tmp_path / "no-legacy", tools=tmp_path / "no-tools", bin_src=src, bin_dest=dest
         ):
-            sup._install_bin_scripts()
+            adapter._install_bin_scripts()
 
         installed = dest / "upload-media"
         assert installed.exists()
@@ -255,7 +245,7 @@ class TestInstallBinScripts:
 
     def test_non_js_files_skipped(self, tmp_path):
         """Non-.js files in bin/ should not be installed."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
 
         src = tmp_path / "app" / "sandbox_runtime" / "bin"
         src.mkdir(parents=True)
@@ -268,14 +258,14 @@ class TestInstallBinScripts:
         with _patch_paths(
             legacy=tmp_path / "no-legacy", tools=tmp_path / "no-tools", bin_src=src, bin_dest=dest
         ):
-            sup._install_bin_scripts()
+            adapter._install_bin_scripts()
 
         assert (dest / "upload-media").exists()
         assert not (dest / "README").exists()
 
     def test_noop_when_bin_dir_missing(self, tmp_path):
         """Should be a no-op when bin/ directory doesn't exist."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
 
         dest = tmp_path / "usr-local-bin"
         dest.mkdir()
@@ -286,7 +276,7 @@ class TestInstallBinScripts:
             bin_src=tmp_path / "no-bin",
             bin_dest=dest,
         ):
-            sup._install_bin_scripts()
+            adapter._install_bin_scripts()
 
         assert list(dest.iterdir()) == []
 
@@ -296,7 +286,7 @@ class TestInstallSkills:
 
     def test_skills_dir_files_copied(self, tmp_path):
         """Bundled Skills should be copied into .opencode/skills."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
         workdir = tmp_path / "workspace"
         workdir.mkdir()
 
@@ -310,7 +300,7 @@ class TestInstallSkills:
             tools=tmp_path / "no-tools",
             skills=skills_dir,
         ):
-            sup._install_skills(workdir)
+            adapter._install_skills(workdir)
 
         skill_dest = workdir / ".opencode" / "skills" / "agent-browser" / "SKILL.md"
         assert skill_dest.exists()
@@ -318,7 +308,7 @@ class TestInstallSkills:
 
     def test_skills_dir_non_directory_is_ignored(self, tmp_path):
         """A non-directory skills path should not raise or copy files."""
-        sup = _make_supervisor()
+        adapter = _make_adapter()
         workdir = tmp_path / "workspace"
         workdir.mkdir()
 
@@ -331,6 +321,6 @@ class TestInstallSkills:
             tools=tmp_path / "no-tools",
             skills=skills_file,
         ):
-            sup._install_skills(workdir)
+            adapter._install_skills(workdir)
 
         assert not (workdir / ".opencode" / "skills").exists()
