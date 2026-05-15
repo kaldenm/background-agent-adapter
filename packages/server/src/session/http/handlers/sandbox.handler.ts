@@ -4,7 +4,7 @@ import type { ParticipantRole, SandboxEvent, ServerMessage } from "../../../type
 import type { OpenAITokenRefreshResult } from "../../openai-token-refresh-service";
 import type { SessionRepository } from "../../repository";
 import type { SandboxRow, SessionRow } from "../../types";
-import { assertArtifactType } from "../../artifacts";
+import { assertArtifactType } from "../../types";
 
 interface AddParticipantRequest {
   userId: string;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldPersistToolCallEvent } from "./event-persistence";
+import { shouldPersistToolCallEvent } from "./sandbox-events";
 
 describe("shouldPersistToolCallEvent", () => {
   it("persists terminal statuses", () => {

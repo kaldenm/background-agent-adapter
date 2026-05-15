@@ -3,8 +3,21 @@ import { generateId } from "../auth/crypto";
 import type { Logger } from "../logger";
 import type { GitPushSpec } from "../source-control";
 import type { SandboxEvent, ServerMessage } from "../types";
-import { shouldPersistToolCallEvent } from "./event-persistence";
-import { assertArtifactType } from "./artifacts";
+import { assertArtifactType } from "./types";
+
+/**
+ * Tool call persistence status helper.
+ * Inlined from event-persistence.ts — only used here.
+ */
+export function shouldPersistToolCallEvent(status: string | null | undefined): boolean {
+  const normalizedStatus = typeof status === "string" ? status.trim() : status;
+  return (
+    normalizedStatus == null ||
+    normalizedStatus === "" ||
+    normalizedStatus === "completed" ||
+    normalizedStatus === "error"
+  );
+}
 import type { SessionRepository } from "./repository";
 import type { CallbackNotificationService } from "./callback-notification-service";
 import type { SessionWebSocketManager } from "./websocket-manager";
