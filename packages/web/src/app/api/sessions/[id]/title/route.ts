@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { controlPlaneFetch } from "@/lib/control-plane";
+import { serverFetch } from "@/lib/server";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
@@ -21,7 +21,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   try {
-    const response = await controlPlaneFetch(`/sessions/${id}/title`, {
+    const response = await serverFetch(`/sessions/${id}/title`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, title: body.title }),

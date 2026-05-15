@@ -1,7 +1,7 @@
 /**
- * Control Plane API utilities.
+ * Server API utilities.
  *
- * Handles authentication and communication with the control plane.
+ * Handles authentication and communication with the server.
  * On Cloudflare Workers, uses a service binding to avoid same-account
  * worker-to-worker fetch restrictions (error 1042). Falls back to
  * URL-based fetch for Vercel / local development.
@@ -16,7 +16,7 @@ import { buildInternalAuthHeaders } from "@open-inspect/shared";
 function getControlPlaneUrl(): string {
   const url = process.env.CONTROL_PLANE_URL;
   if (!url) {
-    console.error("[control-plane] CONTROL_PLANE_URL not configured");
+    console.error("[server] CONTROL_PLANE_URL not configured");
     throw new Error("CONTROL_PLANE_URL not configured");
   }
   return url;
@@ -29,7 +29,7 @@ function getControlPlaneUrl(): string {
 function getInternalSecret(): string {
   const secret = process.env.INTERNAL_CALLBACK_SECRET;
   if (!secret) {
-    console.error("[control-plane] INTERNAL_CALLBACK_SECRET not configured");
+    console.error("[server] INTERNAL_CALLBACK_SECRET not configured");
     throw new Error("INTERNAL_CALLBACK_SECRET not configured");
   }
   return secret;
@@ -87,7 +87,7 @@ async function getServiceBinding(): Promise<ServiceBinding | null> {
     // Expected on non-Cloudflare runtimes (missing package). Log on edge
     // so binding misconfigurations don't silently fall back to URL fetch.
     if (typeof caches !== "undefined") {
-      console.warn("[control-plane] getCloudflareContext failed, falling back to URL fetch:", err);
+      console.warn("[server] getCloudflareContext failed, falling back to URL fetch:", err);
     }
     return null;
   }
@@ -104,10 +104,7 @@ async function getServiceBinding(): Promise<ServiceBinding | null> {
  * @param options - Fetch options (method, body, etc.)
  * @returns Fetch Response
  */
-export async function controlPlaneFetch(
-  path: string,
-  options: RequestInit = {}
-): Promise<Response> {
+export async function serverFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const headers = await getControlPlaneHeaders();
   const fetchOptions: RequestInit = {

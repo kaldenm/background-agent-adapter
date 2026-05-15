@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { controlPlaneFetch } from "@/lib/control-plane";
+import { serverFetch } from "@/lib/server";
 
 export async function DELETE(
   _request: NextRequest,
@@ -16,7 +16,7 @@ export async function DELETE(
   const { owner, name, key } = await params;
 
   try {
-    const response = await controlPlaneFetch(
+    const response = await serverFetch(
       `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/secrets/${encodeURIComponent(key)}`,
       {
         method: "DELETE",

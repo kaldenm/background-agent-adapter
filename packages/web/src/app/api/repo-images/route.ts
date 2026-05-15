@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { controlPlaneFetch } from "@/lib/control-plane";
+import { serverFetch } from "@/lib/server";
 import { supportsRepoImages } from "@/lib/sandbox-provider";
 
 export async function GET() {
@@ -19,8 +19,8 @@ export async function GET() {
 
   try {
     const [enabledResponse, statusResponse] = await Promise.all([
-      controlPlaneFetch("/repo-images/enabled-repos"),
-      controlPlaneFetch("/repo-images/status"),
+      serverFetch("/repo-images/enabled-repos"),
+      serverFetch("/repo-images/status"),
     ]);
 
     if (!enabledResponse.ok || !statusResponse.ok) {

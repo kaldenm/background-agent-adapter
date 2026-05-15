@@ -2,8 +2,8 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { controlPlaneFetch } from "@/lib/control-plane";
-import { buildControlPlanePath } from "@/lib/control-plane-query";
+import { serverFetch } from "@/lib/server";
+import { buildServerPath } from "@/lib/server-query";
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -11,10 +11,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const path = buildControlPlanePath("/automations", request.nextUrl.searchParams);
+  const path = buildServerPath("/automations", request.nextUrl.searchParams);
 
   try {
-    const response = await controlPlaneFetch(path);
+    const response = await serverFetch(path);
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const user = session.user;
     const userId = user.id || user.email || "anonymous";
 
-    const response = await controlPlaneFetch("/automations", {
+    const response = await serverFetch("/automations", {
       method: "POST",
       body: JSON.stringify({
         ...body,

@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { controlPlaneFetch } from "@/lib/control-plane";
+import { serverFetch } from "@/lib/server";
 import { supportsRepoImages } from "@/lib/sandbox-provider";
 
 export async function PUT(
@@ -26,7 +26,7 @@ export async function PUT(
   try {
     const body = await request.json();
 
-    const response = await controlPlaneFetch(
+    const response = await serverFetch(
       `/repo-images/toggle/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
       {
         method: "PUT",

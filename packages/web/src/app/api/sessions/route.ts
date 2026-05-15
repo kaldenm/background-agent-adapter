@@ -3,11 +3,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { getToken } from "next-auth/jwt";
 import { authOptions } from "@/lib/auth";
-import { controlPlaneFetch } from "@/lib/control-plane";
-import {
-  buildControlPlanePath,
-  SESSION_CONTROL_PLANE_QUERY_PARAMS,
-} from "@/lib/control-plane-query";
+import { serverFetch } from "@/lib/server";
+import { buildServerPath, SESSION_SERVER_QUERY_PARAMS } from "@/lib/server-query";
 
 export async function GET(request: NextRequest) {
   const routeStart = Date.now();
@@ -19,15 +16,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const path = buildControlPlanePath(
+  const path = buildServerPath(
     "/sessions",
     request.nextUrl.searchParams,
-    SESSION_CONTROL_PLANE_QUERY_PARAMS
+    SESSION_SERVER_QUERY_PARAMS
   );
 
   try {
     const fetchStart = Date.now();
-    const response = await controlPlaneFetch(path);
+    const response = await serverFetch(path);
     const fetchMs = Date.now() - fetchStart;
     const data = await response.json();
     const totalMs = Date.now() - routeStart;
@@ -60,28 +57,35 @@ export async function POST(request: NextRequest) {
     const user = session.user;
     const userId = user.id || user.email || "anonymous";
 
-    const sessionBody = {
-      repoOwner: body.repoOwner,
-      repoName: body.repoName,
-      model: body.model,
-      reasoningEffort: body.reasoningEffort,
-      branch: body.branch,
-      title: body.title,
-      spawnSource: "user" as const,
-      scmToken: accessToken,
-      scmRefreshToken: jwt?.refreshToken as string | undefined,
-      scmTokenExpiresAt: jwt?.accessTokenExpiresAt as number | undefined,
-      scmUserId: user.id,
-      userId,
-      scmLogin: user.login,
-      scmName: user.name,
-      scmEmail: user.email,
-      scmAvatarUrl: user.image,
+    // All session creation goes through the scheduler — single source of truth.
+    const dispatchBody = {
+      session: {
+        repoOwner: body.repoOwner,
+        repoName: body.repoName,
+        userId,
+        spawnSource: "user" as const,
+        model: body.model,
+        reasoningEffort: body.reasoningEffort,
+        branch: body.branch,
+        title: body.title,
+        scmToken: accessToken,
+        scmRefreshToken: jwt?.refreshToken as string | undefined,
+        scmTokenExpiresAt: jwt?.accessTokenExpiresAt as number | undefined,
+        scmUserId: user.id,
+        scmLogin: user.login,
+        scmName: user.name,
+        scmEmail: user.email,
+      },
+      prompt: {
+        content: body.prompt || body.title || "Start session",
+        authorId: userId,
+        source: "user",
+      },
     };
 
-    const response = await controlPlaneFetch("/sessions", {
+    const response = await serverFetch("/scheduler/dispatch", {
       method: "POST",
-      body: JSON.stringify(sessionBody),
+      body: JSON.stringify(dispatchBody),
     });
 
     const data = await response.json();

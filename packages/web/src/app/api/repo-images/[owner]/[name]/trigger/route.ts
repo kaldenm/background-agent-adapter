@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { controlPlaneFetch } from "@/lib/control-plane";
+import { serverFetch } from "@/lib/server";
 import { supportsRepoImages } from "@/lib/sandbox-provider";
 
 export async function POST(
@@ -24,7 +24,7 @@ export async function POST(
   const { owner, name } = await params;
 
   try {
-    const response = await controlPlaneFetch(
+    const response = await serverFetch(
       `/repo-images/trigger/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
       { method: "POST" }
     );

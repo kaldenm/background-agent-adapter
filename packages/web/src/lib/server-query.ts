@@ -1,14 +1,14 @@
-export const DEFAULT_CONTROL_PLANE_QUERY_PARAMS = ["status", "limit", "offset"] as const;
+export const DEFAULT_SERVER_QUERY_PARAMS = ["status", "limit", "offset"] as const;
 
-export const SESSION_CONTROL_PLANE_QUERY_PARAMS = [
-  ...DEFAULT_CONTROL_PLANE_QUERY_PARAMS,
+export const SESSION_SERVER_QUERY_PARAMS = [
+  ...DEFAULT_SERVER_QUERY_PARAMS,
   "excludeStatus",
 ] as const;
 
-export function buildControlPlanePath(
+export function buildServerPath(
   basePath: string,
   searchParams: URLSearchParams,
-  allowedQueryParams: readonly string[] = DEFAULT_CONTROL_PLANE_QUERY_PARAMS
+  allowedQueryParams: readonly string[] = DEFAULT_SERVER_QUERY_PARAMS
 ): string {
   const forwardedSearchParams = new URLSearchParams();
 

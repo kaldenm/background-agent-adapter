@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { getToken } from "next-auth/jwt";
 import { authOptions } from "@/lib/auth";
-import { controlPlaneFetch } from "@/lib/control-plane";
+import { serverFetch } from "@/lib/server";
 
 /**
  * Generate a WebSocket authentication token for the current user.
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const jwtMs = Date.now() - jwtStart;
 
     const fetchStart = Date.now();
-    const response = await controlPlaneFetch(`/sessions/${sessionId}/ws-token`, {
+    const response = await serverFetch(`/sessions/${sessionId}/ws-token`, {
       method: "POST",
       body: JSON.stringify({
         userId,

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildControlPlanePath, SESSION_CONTROL_PLANE_QUERY_PARAMS } from "./control-plane-query";
+import { buildServerPath, SESSION_SERVER_QUERY_PARAMS } from "./server-query";
 
-describe("buildControlPlanePath", () => {
+describe("buildServerPath", () => {
   it("forwards allowed query parameters in allowlist order", () => {
     const searchParams = new URLSearchParams("offset=20&debug=true&limit=10&status=running");
 
-    expect(buildControlPlanePath("/sessions", searchParams)).toBe(
+    expect(buildServerPath("/sessions", searchParams)).toBe(
       "/sessions?status=running&limit=10&offset=20"
     );
   });
@@ -13,13 +13,13 @@ describe("buildControlPlanePath", () => {
   it("omits query strings when no allowed parameters are present", () => {
     const searchParams = new URLSearchParams("repoOwner=open-inspect&trace=1");
 
-    expect(buildControlPlanePath("/automations", searchParams)).toBe("/automations");
+    expect(buildServerPath("/automations", searchParams)).toBe("/automations");
   });
 
   it("preserves empty allowed values", () => {
     const searchParams = new URLSearchParams("limit=&status=");
 
-    expect(buildControlPlanePath("/automations/run", searchParams)).toBe(
+    expect(buildServerPath("/automations/run", searchParams)).toBe(
       "/automations/run?status=&limit="
     );
   });
@@ -27,7 +27,7 @@ describe("buildControlPlanePath", () => {
   it("preserves repeated values for allowed query parameters", () => {
     const searchParams = new URLSearchParams("status=running&status=failed&limit=10");
 
-    expect(buildControlPlanePath("/sessions", searchParams)).toBe(
+    expect(buildServerPath("/sessions", searchParams)).toBe(
       "/sessions?status=running&status=failed&limit=10"
     );
   });
@@ -35,8 +35,8 @@ describe("buildControlPlanePath", () => {
   it("supports route-specific allowlists", () => {
     const searchParams = new URLSearchParams("excludeStatus=archived&status=running&debug=true");
 
-    expect(
-      buildControlPlanePath("/sessions", searchParams, SESSION_CONTROL_PLANE_QUERY_PARAMS)
-    ).toBe("/sessions?status=running&excludeStatus=archived");
+    expect(buildServerPath("/sessions", searchParams, SESSION_SERVER_QUERY_PARAMS)).toBe(
+      "/sessions?status=running&excludeStatus=archived"
+    );
   });
 });

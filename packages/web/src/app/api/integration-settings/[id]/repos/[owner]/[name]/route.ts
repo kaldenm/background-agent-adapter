@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { controlPlaneFetch } from "@/lib/control-plane";
+import { serverFetch } from "@/lib/server";
 
 export async function GET(
   _request: NextRequest,
@@ -16,7 +16,7 @@ export async function GET(
   const { id, owner, name } = await params;
 
   try {
-    const response = await controlPlaneFetch(
+    const response = await serverFetch(
       `/integration-settings/${encodeURIComponent(id)}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
     );
     const data = await response.json();
@@ -43,7 +43,7 @@ export async function PUT(
 
   try {
     const body = await request.json();
-    const response = await controlPlaneFetch(
+    const response = await serverFetch(
       `/integration-settings/${encodeURIComponent(id)}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
       {
         method: "PUT",
@@ -73,7 +73,7 @@ export async function DELETE(
   const { id, owner, name } = await params;
 
   try {
-    const response = await controlPlaneFetch(
+    const response = await serverFetch(
       `/integration-settings/${encodeURIComponent(id)}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
       {
         method: "DELETE",

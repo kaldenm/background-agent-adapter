@@ -8,12 +8,12 @@ vi.mock("@/lib/auth", () => ({
   authOptions: {},
 }));
 
-vi.mock("@/lib/control-plane", () => ({
-  controlPlaneFetch: vi.fn(),
+vi.mock("@/lib/server", () => ({
+  serverFetch: vi.fn(),
 }));
 
 import { getServerSession } from "next-auth";
-import { controlPlaneFetch } from "@/lib/control-plane";
+import { serverFetch } from "@/lib/server";
 import { GET } from "./route";
 
 describe("analytics breakdown API route", () => {
@@ -34,20 +34,20 @@ describe("analytics breakdown API route", () => {
 
   it("forwards only days and by query params", async () => {
     vi.mocked(getServerSession).mockResolvedValue({ user: { id: "user-1" } } as never);
-    vi.mocked(controlPlaneFetch).mockResolvedValue(Response.json({ entries: [] }, { status: 200 }));
+    vi.mocked(serverFetch).mockResolvedValue(Response.json({ entries: [] }, { status: 200 }));
 
     const response = await GET(
       new Request("http://localhost/api/analytics/breakdown?days=90&foo=bar&by=repo") as never
     );
 
-    expect(controlPlaneFetch).toHaveBeenCalledWith("/analytics/breakdown?days=90&by=repo");
+    expect(serverFetch).toHaveBeenCalledWith("/analytics/breakdown?days=90&by=repo");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ entries: [] });
   });
 
   it("returns 500 when the control plane request throws", async () => {
     vi.mocked(getServerSession).mockResolvedValue({ user: { id: "user-1" } } as never);
-    vi.mocked(controlPlaneFetch).mockRejectedValue(new Error("boom"));
+    vi.mocked(serverFetch).mockRejectedValue(new Error("boom"));
 
     const response = await GET(new Request("http://localhost/api/analytics/breakdown") as never);
 

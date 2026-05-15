@@ -1,13 +1,13 @@
-import { buildControlPlanePath } from "./control-plane-query";
+import { buildServerPath } from "./server-query";
 
 export function buildAnalyticsSummaryPath(searchParams: URLSearchParams): string {
-  return buildControlPlanePath("/analytics/summary", searchParams, ["days"]);
+  return buildServerPath("/analytics/summary", searchParams, ["days"]);
 }
 
 export function buildAnalyticsTimeseriesPath(searchParams: URLSearchParams): string {
-  return buildControlPlanePath("/analytics/timeseries", searchParams, ["days"]);
+  return buildServerPath("/analytics/timeseries", searchParams, ["days"]);
 }
 
 export function buildAnalyticsBreakdownPath(searchParams: URLSearchParams): string {
-  return buildControlPlanePath("/analytics/breakdown", searchParams, ["days", "by"]);
+  return buildServerPath("/analytics/breakdown", searchParams, ["days", "by"]);
 }

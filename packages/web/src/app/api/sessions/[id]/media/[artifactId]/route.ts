@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { controlPlaneFetch } from "@/lib/control-plane";
+import { serverFetch } from "@/lib/server";
 
 const ARTIFACT_ID_PATTERN = /^[A-Za-z0-9-]+$/;
 const SESSION_ID_PATTERN = /^[A-Za-z0-9-]+$/;
@@ -24,7 +24,7 @@ export async function GET(
   }
 
   try {
-    const response = await controlPlaneFetch(`/sessions/${sessionId}/media/${artifactId}`);
+    const response = await serverFetch(`/sessions/${sessionId}/media/${artifactId}`);
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Failed to fetch media: ${errorText}`);

@@ -1,5 +1,6 @@
 {
   "name": "@open-inspect/web",
+  "description": "Next.js web client with real-time session streaming, multiplayer, and GitHub OAuth",
   "version": "0.1.0",
   "private": true,
   "scripts": {
