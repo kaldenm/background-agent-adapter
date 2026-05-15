@@ -61,7 +61,8 @@ import { RepoSecretsStore } from "../db/repo-secrets";
 import { GlobalSecretsStore } from "../db/global-secrets";
 import { mergeSecrets } from "../db/secrets-validation";
 import { OpenAITokenRefreshService } from "./openai-token-refresh-service";
-import { ParticipantService, getAvatarUrl } from "./participant-service";
+import { ParticipantService } from "./participant-service";
+import { SessionServer } from "./session-server";
 import { UserScmTokenStore } from "../db/user-scm-tokens";
 import { CallbackNotificationService } from "./callback-notification-service";
 import { DOFetcherAdapter } from "../scheduler/do-fetcher-adapter";
@@ -98,13 +99,6 @@ import { createAlarmHandler, type AlarmHandler } from "./alarm/handler";
  * unauthenticated connections that never complete the handshake.
  */
 const WS_AUTH_TIMEOUT_MS = 30000; // 30 seconds
-
-/**
- * Maximum age of a WebSocket authentication token (in milliseconds).
- * Tokens older than this are rejected with close code 4001, forcing
- * the client to fetch a fresh token on reconnect.
- */
-const WS_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /** Statuses that indicate a session is finished — metrics are synced to D1 on these transitions. */
 const TERMINAL_STATUSES: SessionStatus[] = ["completed", "failed", "cancelled"];
@@ -148,6 +142,8 @@ export class SessionDO extends DurableObject<Env> {
   private _alarmHandler: AlarmHandler | null = null;
   // Sandbox event processor (lazily initialized)
   private _sandboxEventProcessor: SessionSandboxEventProcessor | null = null;
+  // Session server (lazily initialized)
+  private _sessionServer: SessionServer | null = null;
 
   // Internal HTTP route table (transport wiring only; handlers remain on SessionDO).
   private readonly routes = createSessionInternalRoutes({
@@ -500,6 +496,24 @@ export class SessionDO extends DurableObject<Env> {
     }
 
     return this._alarmHandler;
+  }
+
+  private get sessionServer(): SessionServer {
+    if (!this._sessionServer) {
+      this._sessionServer = new SessionServer({
+        wsManager: this.wsManager,
+        presenceService: this.presenceService,
+        participantService: this.participantService,
+        repository: this.repository,
+        messageService: this.messageService,
+        log: this.log,
+        env: this.env,
+        getSessionState: (sandbox) =>
+          this.getSessionState(sandbox as SandboxRow | null | undefined),
+        getSandbox: () => this.getSandbox(),
+      });
+    }
+    return this._sessionServer;
   }
 
   private get sandboxEventProcessor(): SessionSandboxEventProcessor {
@@ -1113,179 +1127,20 @@ export class SessionDO extends DurableObject<Env> {
   }
 
   /**
-   * Handle client subscription with token validation.
+   * Handle client subscription — authenticate, register, send session state + replay.
    */
   private async handleSubscribe(
     ws: WebSocket,
     data: { token: string; clientId: string }
   ): Promise<void> {
-    // Validate the WebSocket auth token
-    if (!data.token) {
-      this.log.warn("ws.connect", {
-        event: "ws.connect",
-        ws_type: "client",
-        outcome: "auth_failed",
-        reject_reason: "no_token",
-      });
-      ws.close(4001, "Authentication required");
-      return;
-    }
-
-    // Hash the incoming token and look up participant
-    const tokenHash = await hashToken(data.token);
-    const participant = this.participantService.getByWsTokenHash(tokenHash);
-
-    if (!participant) {
-      this.log.warn("ws.connect", {
-        event: "ws.connect",
-        ws_type: "client",
-        outcome: "auth_failed",
-        reject_reason: "invalid_token",
-      });
-      ws.close(4001, "Invalid authentication token");
-      return;
-    }
-
-    // Reject tokens older than the TTL
-    if (
-      participant.ws_token_created_at === null ||
-      Date.now() - participant.ws_token_created_at > WS_TOKEN_TTL_MS
-    ) {
-      this.log.warn("ws.connect", {
-        event: "ws.connect",
-        ws_type: "client",
-        outcome: "auth_failed",
-        reject_reason: "token_expired",
-        participant_id: participant.id,
-        user_id: participant.user_id,
-      });
-      ws.close(4001, "Token expired");
-      return;
-    }
-
-    this.log.info("ws.connect", {
-      event: "ws.connect",
-      ws_type: "client",
-      outcome: "success",
-      participant_id: participant.id,
-      user_id: participant.user_id,
-      client_id: data.clientId,
-    });
-
-    // Build client info from participant data
-    const clientInfo: ClientInfo = {
-      participantId: participant.id,
-      userId: participant.user_id,
-      name: participant.scm_name || participant.scm_login || participant.user_id,
-      avatar: getAvatarUrl(participant.scm_login, resolveScmProviderFromEnv(this.env.SCM_PROVIDER)),
-      status: "active",
-      lastSeen: Date.now(),
-      clientId: data.clientId,
-      ws,
-    };
-
-    this.wsManager.setClient(ws, clientInfo);
-
-    const parsed = this.wsManager.classify(ws);
-    if (parsed.kind === "client" && parsed.wsId) {
-      this.wsManager.persistClientMapping(parsed.wsId, participant.id, data.clientId);
-      this.log.debug("Stored ws_client_mapping", {
-        ws_id: parsed.wsId,
-        participant_id: participant.id,
-      });
-    }
-
-    // Gather session state and replay events, then send as a single message.
-    // Fetch sandbox once and thread it through to avoid a redundant SQLite read.
-    const sandbox = this.getSandbox();
-    const state = await this.getSessionState(sandbox);
-    const artifacts = this.messageService.listArtifacts();
-    const replay = this.getReplayData();
-
-    this.safeSend(ws, {
-      type: "subscribed",
-      sessionId: state.id,
-      state,
-      artifacts: artifacts.artifacts,
-      participantId: participant.id,
-      participant: {
-        participantId: participant.id,
-        name: participant.scm_name || participant.scm_login || participant.user_id,
-        avatar: getAvatarUrl(
-          participant.scm_login,
-          resolveScmProviderFromEnv(this.env.SCM_PROVIDER)
-        ),
-      },
-      replay,
-      spawnError: sandbox?.last_spawn_error ?? null,
-    } as ServerMessage);
-
-    // Send current presence
-    this.presenceService.sendPresence(ws);
-
-    // Notify others
-    this.presenceService.broadcastPresence();
-  }
-
-  /**
-   * Collect historical events for replay.
-   * Returns parsed events and pagination metadata for inclusion in the subscribed message.
-   */
-  private getReplayData(): {
-    events: SandboxEvent[];
-    hasMore: boolean;
-    cursor: { timestamp: number; id: string } | null;
-  } {
-    const REPLAY_LIMIT = 500;
-    const rows = this.repository.getEventsForReplay(REPLAY_LIMIT);
-    const hasMore = rows.length >= REPLAY_LIMIT;
-
-    const events: SandboxEvent[] = [];
-    for (const row of rows) {
-      try {
-        events.push(JSON.parse(row.data));
-      } catch {
-        // Skip malformed events
-      }
-    }
-
-    const cursor = rows.length > 0 ? { timestamp: rows[0].created_at, id: rows[0].id } : null;
-
-    return { events, hasMore, cursor };
+    await this.sessionServer.meta(ws, data);
   }
 
   /**
    * Get client info for a WebSocket, reconstructing from storage if needed after hibernation.
    */
   private getClientInfo(ws: WebSocket): ClientInfo | null {
-    // 1. In-memory cache (manager)
-    const cached = this.wsManager.getClient(ws);
-    if (cached) return cached;
-
-    // 2. DB recovery (manager handles tag parsing + DB lookup)
-    const mapping = this.wsManager.recoverClientMapping(ws);
-    if (!mapping) {
-      this.log.warn("No client mapping found after hibernation, closing WebSocket");
-      this.wsManager.close(ws, 4002, "Session expired, please reconnect");
-      return null;
-    }
-
-    // 3. Build ClientInfo (DO owns domain logic)
-    this.log.info("Recovered client info from DB", { user_id: mapping.user_id });
-    const clientInfo: ClientInfo = {
-      participantId: mapping.participant_id,
-      userId: mapping.user_id,
-      name: mapping.scm_name || mapping.scm_login || mapping.user_id,
-      avatar: getAvatarUrl(mapping.scm_login, resolveScmProviderFromEnv(this.env.SCM_PROVIDER)),
-      status: "active",
-      lastSeen: Date.now(),
-      clientId: mapping.client_id || `client-${Date.now()}`,
-      ws,
-    };
-
-    // 4. Re-cache
-    this.wsManager.setClient(ws, clientInfo);
-    return clientInfo;
+    return this.sessionServer.getClientInfo(ws);
   }
 
   /**

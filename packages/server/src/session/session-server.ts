@@ -215,7 +215,7 @@ export class SessionServer {
   }
 
   /** Get last 500 events for replay. */
-  private replay(): {
+  replay(): {
     events: SandboxEvent[];
     hasMore: boolean;
     cursor: { timestamp: number; id: string } | null;
