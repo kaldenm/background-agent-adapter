@@ -45,6 +45,6 @@ existing GitHub behavior and prevents unsafe coupling during future provider con
 
 ## Follow-Up Rules for Provider Contributions
 
-- Add new provider logic under `packages/control-plane/src/source-control/providers`.
+- Add new provider logic under `packages/server/src/source-control/providers`.
 - Register provider in factory and env resolver.
 - Do not add provider-specific URL/token logic to router/session/slack layers.

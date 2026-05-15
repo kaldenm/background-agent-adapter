@@ -1,40 +1,201 @@
-# Background Agents: Open-Inspect
+# Background Agent Adapter
 
-An open-source background agents coding system inspired by
-[Ramp's Inspect](https://builders.ramp.com/post/why-we-built-our-background-agent).
+[![CI](https://github.com/Goober-Codes/background-agent-adapter/actions/workflows/ci.yml/badge.svg)](https://github.com/Goober-Codes/background-agent-adapter/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-22+-green.svg)](https://nodejs.org)
+[![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://python.org)
 
-## Overview
+**Plug any coding agent into a background agent system.**
 
-Open-Inspect provides a hosted background coding agent that can:
+<!-- TODO: Uncomment when screenshot is captured
+![Session streaming](docs/assets/session-streaming.png)
+-->
 
-- Work on tasks in the background while you focus on other things
-- Access full development environments (Node.js, Python, git, browser automation, VS Code)
-- Connect from anywhere — web UI, Slack, GitHub PRs, Linear issues, or webhooks
-- Enable multiplayer sessions where multiple people can collaborate in real time
-- Create PRs with proper commit attribution to the prompting user
-- Run on a schedule — cron jobs, Sentry alerts, and webhook-triggered automations
-- Spawn parallel sub-tasks that work in separate sandboxes simultaneously
-- Use your choice of AI model — Anthropic Claude, OpenAI Codex (via ChatGPT subscription), or
-  OpenCode Zen
+This project adds a pluggable agent adapter layer to
+[Open-Inspect](https://github.com/ColeMurray/background-agents) — an open-source background coding
+agent platform inspired by
+[Ramp's Inspect](https://builders.ramp.com/post/why-we-built-our-background-agent). The original
+system was hardwired to one coding agent. This fork extracts a clean adapter interface so you can
+swap in **any** coding agent by implementing 13 methods and setting one environment variable.
 
-## Security Model (Single-Tenant Only)
+> **Built on** [ColeMurray/background-agents](https://github.com/ColeMurray/background-agents). The
+> control plane, web UI, bot integrations, sandbox providers, and automations system come from the
+> upstream project. This fork's contribution is the **pluggable agent adapter layer**.
 
-> **Important**: This system is designed for **single-tenant deployment only**, where all users are
-> trusted members of the same organization with access to the same repositories.
+---
 
-### How It Works
+## Quick Start
 
-The system uses a shared GitHub App installation for all git operations (clone, push). This means:
+```bash
+git clone https://github.com/Goober-Codes/background-agent-adapter.git
+cd background-agent-adapter
+bash .openinspect/setup.sh          # installs deps, builds shared, sets up hooks
+npm run dev -w @open-inspect/web     # start the web UI
+```
 
-- **All users share the same GitHub App credentials** - The GitHub App must be installed on your
-  organization's repositories, and any user of the system can access any repo the App has access to
-- **No per-user repository access validation** - The system does not verify that a user has
-  permission to access a specific repository before creating a session
-- **User OAuth tokens are used for PR creation** - PRs are created using the user's GitHub OAuth
-  token, ensuring proper attribution and that users can only create PRs on repos they have write
-  access to
+For full deployment (Cloudflare + sandbox provider), see
+[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
-### Token Architecture
+---
+
+## What This Adds
+
+The upstream Open-Inspect system was locked to a single coding agent (OpenCode). Swapping agents
+meant rewriting the 1,700-line bridge that handles WebSocket streaming, event buffering, git push,
+and sandbox coordination.
+
+This fork extracts that into a **pluggable adapter layer**:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Bridge (agent-agnostic orchestration)              │
+│  WebSocket streaming, event buffering, git push,    │
+│  snapshot coordination — doesn't change when you    │
+│  swap agents                                        │
+└──────────────────────┬──────────────────────────────┘
+                       │
+              ┌────────▼────────┐
+              │  AgentAdapter   │  ← 13 methods
+              │  (base.py)      │
+              └────────┬────────┘
+                       │
+           ┌───────────┼───────────┐
+           │                       │
+   ┌───────▼───────┐     ┌────────▼────────┐
+   │   OpenCode    │     │       Pi        │
+   │  HTTP server  │     │  subprocess     │
+   │  (1,243 lines)│     │  stdin/stdout   │
+   │               │     │  (754 lines)    │
+   └───────────────┘     └─────────────────┘
+```
+
+### Bring your own agent
+
+1. Create `adapters/my_agent.py` implementing the
+   [`AgentAdapter`](packages/sandbox-runtime/src/sandbox_runtime/adapters/base.py) ABC
+2. Register it in
+   [`adapters/__init__.py`](packages/sandbox-runtime/src/sandbox_runtime/adapters/__init__.py)
+3. Set `AGENT_ADAPTER=my_agent`
+
+Your adapter translates between your agent's protocol and 5 standard event types. The bridge,
+control plane, web UI, and bot integrations all work without changes.
+
+See [docs/AGENT_ADAPTER.md](docs/AGENT_ADAPTER.md) for the full guide.
+
+### Two adapters included
+
+| Adapter      | Communication Model             | Lines | How it works                                                                     |
+| ------------ | ------------------------------- | ----- | -------------------------------------------------------------------------------- |
+| **OpenCode** | HTTP server on localhost        | 1,243 | Bridge makes HTTP requests, reads SSE streams. Agent runs independently.         |
+| **Pi**       | Subprocess (stdin/stdout pipes) | 754   | Bridge spawns the agent, writes JSON in, reads JSON out. Agent dies with bridge. |
+
+These two adapters prove the pattern works across fundamentally different communication models — an
+HTTP server vs a child process with pipes.
+
+---
+
+## The Adapter Interface
+
+Every adapter implements 13 methods, split across two processes:
+
+**Entrypoint process** (agent lifecycle):
+
+- `install()` — set up tools, plugins, config files
+- `start()` — launch the agent process
+- `get_process()` — return subprocess handle for crash detection
+- `forward_logs()` — pipe agent stdout to supervisor
+
+**Bridge subprocess** (agent communication):
+
+- `configure()` — receive shared HTTP client and port
+- `ensure_session()` — create or resume a session
+- `send_prompt()` — send prompt, yield events (token, tool_call, step_start, step_finish, error)
+- `stop()` — cancel current execution
+- `health_check()` — is the agent alive?
+- `load_session_id()` — restore session ID from disk (for snapshot restore)
+- `save_session_id()` — persist session ID to disk
+- `get_session_id_for_snapshot()` — return session ID for snapshot metadata
+- `shutdown()` — clean up before exit
+
+They run in two separate processes because they need independent crash/restart lifecycles. If the
+WebSocket drops, the bridge restarts without killing the agent. If the agent crashes, the entrypoint
+restarts it without killing the bridge.
+
+---
+
+## Platform Features
+
+Everything below comes from the upstream
+[Open-Inspect](https://github.com/ColeMurray/background-agents) platform and works with any adapter:
+
+- **Background sessions** — send a prompt, close your laptop, check the PR later
+- **Multiplayer** — multiple users in the same session with real-time streaming
+- **Web UI** — session dashboard, model selector, terminal panel
+- **Slack bot** — @mention or DM to start a session
+- **GitHub bot** — auto-review PRs, respond to @mentions
+- **Linear bot** — assign an issue to the agent
+- **Automations** — cron schedules, Sentry alerts, inbound webhooks
+- **Snapshot save/restore** — freeze sandbox state, restore instantly on follow-up
+- **Sub-task spawning** — agents decompose work into parallel child sessions
+- **Commit attribution** — PRs attributed to the user who sent the prompt
+- **Repo secrets** — AES-256-GCM encrypted, injected as env vars
+- **Multi-model** — Anthropic Claude, OpenAI, OpenCode Zen
+
+## Architecture
+
+```
+                                    ┌──────────────────┐
+                                    │     Clients      │
+                                    │  Web / Slack /   │
+                                    │  GitHub / Linear │
+                                    │  / Webhooks      │
+                                    └────────┬─────────┘
+                                             │
+                                             ▼
+┌────────────────────────────────────────────────────────────────────┐
+│                     Control Plane (Cloudflare)                     │
+│  Durable Objects (per session) + D1 Database                       │
+│  SQLite · WebSocket Hub · Event Stream · GitHub Integration        │
+└────────────────────────────┬───────────────────────────────────────┘
+                             │
+                             ▼
+┌────────────────────────────────────────────────────────────────────┐
+│                      Sandbox (Modal / Daytona)                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  Entrypoint (PID 1)                                         │  │
+│  │    └─ Bridge ──▶ AgentAdapter ──▶ [Your Agent Here]         │  │
+│  │                                                              │  │
+│  │  Full dev environment: Node.js, Python, git, browser, VS Code│  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+## Packages
+
+| Package                                     | Description                                                                 |
+| ------------------------------------------- | --------------------------------------------------------------------------- |
+| [sandbox-runtime](packages/sandbox-runtime) | **Agent adapter layer** — the ABC, adapter registry, bridge, and entrypoint |
+| [server](packages/server)                   | Cloudflare Workers + Durable Objects session management                     |
+| [web](packages/web)                         | Next.js web client                                                          |
+| [modal-infra](packages/modal-infra)         | Modal sandbox infrastructure                                                |
+| [daytona-infra](packages/daytona-infra)     | Daytona sandbox snapshot tooling                                            |
+| [slack-bot](packages/slack-bot)             | Slack integration                                                           |
+| [github-bot](packages/github-bot)           | GitHub integration                                                          |
+| [linear-bot](packages/linear-bot)           | Linear integration                                                          |
+| [shared](packages/shared)                   | Shared types and utilities                                                  |
+
+<details>
+<summary><strong>Security Model (single-tenant only)</strong></summary>
+
+This system is designed for **single-tenant deployment only**, where all users are trusted members
+of the same organization.
+
+- **All users share the same GitHub App credentials** — the App's installation scope defines what
+  the system can access
+- **No per-user repository access validation** — the system does not verify per-repo permissions at
+  session creation
+- **User OAuth tokens are used for PR creation** — ensuring proper attribution and write-access
+  enforcement
 
 | Token Type       | Purpose                | Scope                            |
 | ---------------- | ---------------------- | -------------------------------- |
@@ -42,223 +203,50 @@ The system uses a shared GitHub App installation for all git operations (clone, 
 | User OAuth Token | Create PRs, user info  | Repos user has access to         |
 | WebSocket Token  | Real-time session auth | Single session                   |
 
-### Why Single-Tenant Only
+**Deployment recommendations:**
 
-This architecture follows
-[Ramp's Inspect design](https://builders.ramp.com/post/why-we-built-our-background-agent), which was
-built for internal use where all employees are trusted and have access to company repositories.
+1. Deploy behind your organization's SSO/VPN
+2. Install the GitHub App only on intended repositories
+3. Use GitHub's repository selection — specific repos, not "All repositories"
 
-**For multi-tenant deployment**, you would need:
+</details>
 
-- Per-tenant GitHub App installations
-- Access validation at session creation
-- Tenant isolation in the data model
+## Documentation
 
-### Deployment Recommendations
+| Doc                                                 | Description                       |
+| --------------------------------------------------- | --------------------------------- |
+| [AGENT_ADAPTER.md](docs/AGENT_ADAPTER.md)           | **How to add a new coding agent** |
+| [SETUP_GUIDE.md](docs/SETUP_GUIDE.md)               | Local development setup           |
+| [GETTING_STARTED.md](docs/GETTING_STARTED.md)       | Full deployment with Terraform    |
+| [HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)             | Architecture deep dive            |
+| [AUTOMATIONS.md](docs/AUTOMATIONS.md)               | Cron, Sentry, webhook automations |
+| [SECRETS.md](docs/SECRETS.md)                       | Repo secrets management           |
+| [DEBUGGING_PLAYBOOK.md](docs/DEBUGGING_PLAYBOOK.md) | Troubleshooting guide             |
+| [CHANGELOG.md](CHANGELOG.md)                        | Release history                   |
 
-1. **Deploy behind your organization's SSO/VPN** - Ensure only authorized employees can access the
-   web interface
-2. **Install GitHub App only on intended repositories** - The App's installation scope defines what
-   the system can access
-3. **Use GitHub's repository selection** - When installing the App, select specific repositories
-   rather than "All repositories"
+## Contributing
 
-## Architecture
-
-```
-                                    ┌──────────────────┐
-                                    │     Clients      │
-                                    │ ┌──────────────┐ │
-                                    │ │  Web / Slack │ │
-                                    │ │ GitHub / Lin.│ │
-                                    │ │   Webhooks   │ │
-                                    │ └──────────────┘ │
-                                    └────────┬─────────┘
-                                             │
-                                             ▼
-┌────────────────────────────────────────────────────────────────────┐
-│                     Control Plane (Cloudflare)                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │                   Durable Objects (per session)              │  │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌───────────────┐    │  │
-│  │  │ SQLite  │  │WebSocket│  │  Event  │  │   GitHub      │    │  │
-│  │  │   DB    │  │   Hub   │  │ Stream  │  │ Integration   │    │  │
-│  │  └─────────┘  └─────────┘  └─────────┘  └───────────────┘    │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │              D1 Database (repo-scoped secrets)               │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────┬───────────────────────────────────┘
-                                 │
-                                 ▼
-┌────────────────────────────────────────────────────────────────────┐
-│                      Data Plane (Modal)                            │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │                     Session Sandbox                          │  │
-│  │  ┌───────────┐  ┌───────────┐  ┌───────────┐                 │  │
-│  │  │ Supervisor│──│  OpenCode │──│   Bridge  │─────────────────┼──┼──▶ Control Plane
-│  │  └───────────┘  └───────────┘  └───────────┘                 │  │
-│  │                      │                                       │  │
-│  │              Full Dev Environment                            │  │
-│  │      (Node.js, Python, git, agent-browser)                   │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-## Packages
-
-| Package                                 | Description                                 |
-| --------------------------------------- | ------------------------------------------- |
-| [modal-infra](packages/modal-infra)     | Modal sandbox infrastructure                |
-| [control-plane](packages/control-plane) | Cloudflare Workers + Durable Objects        |
-| [web](packages/web)                     | Next.js web client                          |
-| [slack-bot](packages/slack-bot)         | Slack integration (sessions from messages)  |
-| [github-bot](packages/github-bot)       | GitHub integration (auto-review, @mention)  |
-| [linear-bot](packages/linear-bot)       | Linear integration (issue → coding session) |
-| [shared](packages/shared)               | Shared types and utilities                  |
-
-## Getting Started
-
-For a practical setup guide (local + contributor + deployment paths), start with
-**[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)**.
-
-See **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** for deployment instructions.
-
-To understand the architecture and core concepts, read
-**[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)**.
-
-To set up recurring scheduled tasks, see **[docs/AUTOMATIONS.md](docs/AUTOMATIONS.md)**.
-
-## Key Features
-
-### Fast Startup
-
-Sessions start near-instantly through multiple layers of warming:
-
-- **Filesystem snapshots** — After each prompt, sandbox state is saved; follow-up sessions restore
-  instead of re-cloning
-- **Pre-built repo images** — Toggle per-repo in Settings; rebuilt every 30 minutes with latest
-  commits and dependencies
-- **Proactive warming** — Sandbox begins spinning up as soon as you start typing, before you hit
-  Enter
-
-### Multiplayer Sessions
-
-Multiple users can collaborate in the same session:
-
-- Presence indicators show who's active
-- Prompts are attributed to their authors in git commits
-- Real-time streaming to all connected clients
-
-### Commit Attribution
-
-Commits are attributed to the user who sent the prompt:
-
-```typescript
-// Configure git identity per prompt
-await configureGitIdentity({
-  name: author.scmName,
-  email: author.scmEmail,
-});
-```
-
-### Multi-Provider Model Support
-
-Choose the AI model that fits your task, with per-session reasoning effort controls:
-
-| Provider     | Models                                                      |
-| ------------ | ----------------------------------------------------------- |
-| Anthropic    | Claude Haiku 4.5, Sonnet 4.5/4.6, Opus 4.5/4.6              |
-| OpenAI       | GPT 5.2, GPT 5.4, GPT 5.2 Codex, 5.3 Codex, 5.3 Codex Spark |
-| OpenCode Zen | Kimi K2.5, MiniMax M2.5, GLM 5 (opt-in)                     |
-
-OpenAI models work with your existing ChatGPT subscription via OAuth — no separate API key needed.
-See **[docs/OPENAI_MODELS.md](docs/OPENAI_MODELS.md)** for setup instructions.
-
-### Client Integrations
-
-Interact with agents from wherever your team already works:
-
-- **Web UI** — Full session management with real-time streaming, model/reasoning selectors, terminal
-  panel, and multiplayer presence
-- **Slack Bot** — @mention or DM to start a session; replies thread back with results. Per-user
-  model and branch preferences via App Home
-- **GitHub Bot** — Auto-review on PR open, respond to @mentions in PR comments, or trigger on
-  reviewer assignment. Configurable per-repo
-- **Linear Bot** — Assign an issue to the agent and it creates a coding session, posts progress
-  activities, and links the resulting PR
-- **Webhooks** — Trigger sessions from any external system via authenticated HTTP POST
-
-### Automations
-
-Schedule recurring tasks or react to external events — no human in the loop:
-
-- **Cron schedules** — Hourly, daily, weekly, monthly, or custom 5-field cron with timezone support
-- **Sentry alerts** — Auto-triage on new errors, regressions, or critical metric alerts
-- **Inbound webhooks** — JSONPath condition filters to gate which payloads spawn sessions
-- Auto-pause after 3 consecutive failures, manual trigger button, full run history
-
-See **[docs/AUTOMATIONS.md](docs/AUTOMATIONS.md)** for setup instructions.
-
-### Sandbox Environment
-
-Every session runs in an isolated Modal sandbox with a full development environment:
-
-- **Pre-installed:** Node.js 22, Python 3.12, Bun, git, GitHub CLI, build-essential
-- **Browser automation:** agent-browser CLI with headless Chromium for screenshots, visual diffs,
-  and UI verification
-- **Code-server:** Optional browser-based VS Code connected to the session workspace
-- **Web terminal:** ttyd-powered terminal accessible from the session UI
-- **Port tunneling:** Expose up to 10 dev server ports via encrypted tunnels
-- **Repo secrets:** AES-256-GCM encrypted, scoped per-repo or globally, injected as env vars at
-  spawn time. Supports bulk `.env` paste import
-
-### Sub-Task Spawning
-
-Agents can decompose work into parallel child sessions:
-
-- `spawn-task` creates a child session in its own sandbox and returns immediately
-- Parent continues working while children run in parallel on separate branches
-- `get-task-status` and `cancel-task` for coordination
-- Depth limits and per-repo guardrails enforced
-
-### Repository Lifecycle Scripts
-
-Repositories can define two optional startup scripts under `.openinspect/`:
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
 
 ```bash
-# .openinspect/setup.sh (provisioning)
-#!/bin/bash
-npm install
-pip install -r requirements.txt
+bash .openinspect/setup.sh     # one-time setup
+npm run lint                   # lint all packages
+npm run typecheck              # type-check all packages
+npm test                       # run all tests
 ```
-
-```bash
-# .openinspect/start.sh (runtime startup)
-#!/bin/bash
-docker compose up -d postgres redis
-```
-
-- `setup.sh` runs for image builds and fresh sessions
-- `setup.sh` is skipped for repo-image and snapshot-restore starts
-- `setup.sh` failures are non-fatal for fresh sessions, but fatal in image build mode
-- `start.sh` runs for every non-build session startup (fresh, repo-image, snapshot-restore)
-- `start.sh` failures are strict: if present and it fails, session startup fails
-- Default timeouts:
-  - `SETUP_TIMEOUT_SECONDS` (default `300`)
-  - `START_TIMEOUT_SECONDS` (default `120`)
-- Both hooks receive `OPENINSPECT_BOOT_MODE` (`build`, `fresh`, `repo_image`, `snapshot_restore`)
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
 
 ## Credits
 
-Inspired by [Ramp's Inspect](https://builders.ramp.com/post/why-we-built-our-background-agent) and
-built with:
+Built on [ColeMurray/background-agents](https://github.com/ColeMurray/background-agents)
+(Open-Inspect), with:
 
-- [Modal](https://modal.com) - Cloud sandbox infrastructure
-- [Cloudflare Workers](https://workers.cloudflare.com) - Edge computing
-- [OpenCode](https://opencode.ai) - Coding agent runtime
-- [Next.js](https://nextjs.org) - Web framework
+- [Modal](https://modal.com) — cloud sandbox infrastructure
+- [Cloudflare Workers](https://workers.cloudflare.com) — edge computing
+- [Daytona](https://daytona.io) — sandbox provider
+- [Next.js](https://nextjs.org) — web framework
+
+Inspired by [Ramp's Inspect](https://builders.ramp.com/post/why-we-built-our-background-agent).

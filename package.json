@@ -1,7 +1,16 @@
 {
-  "name": "open-inspect",
+  "name": "background-agent-adapter",
+  "description": "Pluggable agent adapter layer for background coding agents. Swap coding agents by implementing 13 methods and setting one env var.",
   "version": "0.1.0",
   "private": true,
+  "keywords": [
+    "background-agent",
+    "coding-agent",
+    "adapter",
+    "pluggable",
+    "sandbox",
+    "ai-agent"
+  ],
   "type": "module",
   "workspaces": [
     "packages/*"

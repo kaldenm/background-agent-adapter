@@ -1,101 +1,134 @@
-# Contributing to Open-Inspect
+# Contributing to Background Agent Adapter
 
-Thank you for your interest in contributing to Open-Inspect! This document provides guidelines for
-contributing to the project.
+Thank you for your interest in contributing! This project adds a pluggable agent adapter layer to
+the [Open-Inspect](https://github.com/ColeMurray/background-agents) background coding agent system.
+
+## Ways to Contribute
+
+### Add a new agent adapter
+
+This is the highest-impact contribution. If you have a coding agent you want to run as a background
+agent, you can add an adapter for it:
+
+1. Read [docs/AGENT_ADAPTER.md](docs/AGENT_ADAPTER.md) — the full guide
+2. Look at the existing adapters in
+   [`packages/sandbox-runtime/src/sandbox_runtime/adapters/`](packages/sandbox-runtime/src/sandbox_runtime/adapters/)
+3. Implement the 13-method `AgentAdapter` ABC
+4. Add tests (see `tests/test_pi_adapter.py` for reference)
+5. Open a PR
+
+Use the
+[New Agent Adapter](https://github.com/Goober-Codes/background-agent-adapter/issues/new?template=new_adapter.md)
+issue template to discuss before starting.
+
+### Fix bugs or improve existing code
+
+Standard contribution flow — find an issue, fix it, open a PR.
+
+### Improve documentation
+
+Docs live in `docs/`. If something is unclear or missing, PRs are welcome.
 
 ## Getting Started
 
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR-USERNAME/open-inspect.git`
-3. Run the setup script: `bash .openinspect/setup.sh`
-4. Create a branch for your changes: `git checkout -b feature/your-feature-name`
-
-## Development Setup
-
-The quickest way to get a working environment:
-
 ```bash
+# Clone and bootstrap
+git clone https://github.com/Goober-Codes/background-agent-adapter.git
+cd background-agent-adapter
 bash .openinspect/setup.sh
 ```
 
-This handles npm dependencies, builds the shared package, configures git hooks (husky +
-lint-staged), and optionally sets up a Python virtualenv for `packages/modal-infra`.
-
-See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for full deployment instructions. See
-[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) for local setup and day-to-day development paths.
+This handles npm dependencies, builds the shared package, configures git hooks, and optionally sets
+up a Python virtualenv for `packages/modal-infra`.
 
 For manual setup or individual steps:
 
 ```bash
-# Install dependencies
 npm install
-
-# Build shared package
-npm run build -w @open-inspect/shared
-
-# Run type checking
+npm run build -w @open-inspect/shared    # build shared first
 npm run typecheck
-
-# Run linting
 npm run lint
-
-# Run tests
 npm test
 ```
 
 ## Project Structure
 
-| Package                  | Description                          |
-| ------------------------ | ------------------------------------ |
-| `packages/control-plane` | Cloudflare Workers + Durable Objects |
-| `packages/web`           | Next.js web application              |
-| `packages/modal-infra`   | Modal sandbox infrastructure         |
-| `packages/shared`        | Shared types and utilities           |
+| Package                    | Description                                                     |
+| -------------------------- | --------------------------------------------------------------- |
+| `packages/sandbox-runtime` | **Agent adapter layer** — the ABC, registry, bridge, entrypoint |
+| `packages/server`          | Cloudflare Workers + Durable Objects                            |
+| `packages/web`             | Next.js web application                                         |
+| `packages/modal-infra`     | Modal sandbox infrastructure                                    |
+| `packages/shared`          | Shared types and utilities                                      |
 
-## Making Changes
+## Development Workflow
 
-### Code Style
+### TypeScript
 
-- Run `npm run lint` before committing
-- Run `npm run typecheck` to ensure type safety
-- Follow existing code patterns in the codebase
+```bash
+npm run build -w @open-inspect/shared    # rebuild if shared types changed
+npm run lint                             # ESLint + Prettier
+npm run typecheck                        # tsc across all packages
+npm test                                 # all tests
 
-### Commit Messages
+# Targeted tests
+npm test -w @open-inspect/control-plane
+npm run test:integration -w @open-inspect/control-plane
+npm test -w @open-inspect/web
+npm test -w @open-inspect/github-bot
+npm test -w @open-inspect/slack-bot
+npm test -w @open-inspect/linear-bot
+```
 
-Use clear, descriptive commit messages:
+### Python (sandbox-runtime / modal-infra)
 
-- `feat: add new feature`
-- `fix: resolve issue with X`
-- `docs: update documentation`
-- `refactor: restructure module`
+```bash
+cd packages/modal-infra
+uv sync --frozen --extra dev      # or: pip install -e ".[dev]"
+pytest tests/ -v
+ruff check --fix && ruff format
+```
 
-### Pull Requests
+## Code Style
 
-1. Ensure all tests pass: `npm test`
-2. Ensure linting passes: `npm run lint`
-3. Ensure type checking passes: `npm run typecheck`
-4. Update documentation if needed
+- Run `npm run lint` and `npm run typecheck` before committing
+- Husky + lint-staged will catch most issues on commit
+- Follow existing patterns in the codebase
+
+## Commit Messages
+
+Use [conventional commits](https://www.conventionalcommits.org/):
+
+- `feat:` new feature
+- `fix:` bug fix
+- `docs:` documentation
+- `refactor:` code restructure
+- `test:` adding or updating tests
+- `chore:` maintenance
+
+Keep the subject under 72 characters.
+
+## Pull Requests
+
+1. Ensure all tests pass
+2. Ensure linting and type checking pass
+3. Update documentation if needed
+4. Fill out the PR template
 5. Provide a clear description of your changes
 
-### Source Control Provider Contributions
+### For new adapters specifically
 
-For SCM/provider changes, follow:
-
-- `docs/adr/0001-single-provider-scm-boundaries.md`
-- `docs/provider-contribution-checklist.md`
+Follow the checklist in
+[docs/provider-contribution-checklist.md](docs/provider-contribution-checklist.md) and reference
+[docs/AGENT_ADAPTER.md](docs/AGENT_ADAPTER.md).
 
 ## Reporting Issues
 
-When reporting issues, please include:
+Use the GitHub issue templates:
 
-- A clear description of the problem
-- Steps to reproduce
-- Expected vs actual behavior
-- Environment details (OS, Node version, etc.)
-
-## Questions
-
-If you have questions, please open a GitHub issue with the "question" label.
+- [Bug Report](https://github.com/Goober-Codes/background-agent-adapter/issues/new?template=bug_report.md)
+- [Feature Request](https://github.com/Goober-Codes/background-agent-adapter/issues/new?template=feature_request.md)
+- [New Agent Adapter](https://github.com/Goober-Codes/background-agent-adapter/issues/new?template=new_adapter.md)
 
 ## License
 

@@ -4,7 +4,7 @@ Use this checklist before opening a pull request for a new source-control provid
 
 ## Architecture Checklist
 
-- [ ] Provider implementation lives under `packages/control-plane/src/source-control/providers`.
+- [ ] Provider implementation lives under `packages/server/src/source-control/providers`.
 - [ ] Provider factory (`createSourceControlProvider`) has an explicit case for the new provider.
 - [ ] Deployment resolver (`SCM_PROVIDER`) recognizes the new provider name.
 - [ ] No provider-specific URL/token construction was added to router/session/slack layers.

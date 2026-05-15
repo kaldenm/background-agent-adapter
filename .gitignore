@@ -95,3 +95,5 @@ terraform/environments/production/backend_override.tf
 terraform/environments/production/terraform.tfstate*
 terraform/environments/production/.terraform*
 pi-information/
+personal_notes/
+wrangler-tail.toml

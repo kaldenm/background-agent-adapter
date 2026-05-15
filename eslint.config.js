@@ -93,7 +93,7 @@ export default tseslint.config(
 
   // Cloudflare Workers specific config
   {
-    files: ["packages/control-plane/**/*.ts"],
+    files: ["packages/server/**/*.ts"],
     languageOptions: {
       globals: {
         ...globals.worker,
