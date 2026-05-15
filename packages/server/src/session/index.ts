@@ -2,7 +2,7 @@
  * Session module exports.
  */
 
-export { SessionDO } from "./durable-object";
+export { SessionDO } from "./session";
 export { SessionWebSocketManagerImpl } from "./websocket-manager";
 export type {
   SessionWebSocketManager,

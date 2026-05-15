@@ -21,7 +21,7 @@ vi.mock("cloudflare:workers", () => ({
 }));
 
 // Must import AFTER vi.mock so the hoisted mock is in place
-const { SchedulerDO } = await import("./durable-object");
+const { SchedulerDO } = await import("./scheduler");
 
 // ─── Mock factories ──────────────────────────────────────────────────────────
 

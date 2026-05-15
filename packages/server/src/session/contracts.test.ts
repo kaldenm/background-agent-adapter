@@ -6,10 +6,7 @@ describe("session internal endpoint contracts", () => {
   it("uses contract constants in internal route wiring and router for known endpoints", () => {
     const routerSource = readFileSync(new URL("../router.ts", import.meta.url), "utf8");
     const routesSource = readFileSync(new URL("./http/routes.ts", import.meta.url), "utf8");
-    const durableObjectSource = readFileSync(
-      new URL("./durable-object.ts", import.meta.url),
-      "utf8"
-    );
+    const durableObjectSource = readFileSync(new URL("./session.ts", import.meta.url), "utf8");
 
     const routerEndpointKeys: Array<keyof typeof SessionInternalPaths> = [
       "verifySandboxToken",
