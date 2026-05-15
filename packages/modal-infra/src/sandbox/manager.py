@@ -306,7 +306,7 @@ class SandboxManager:
         sandbox = await modal.Sandbox.create.aio(
             "python",
             "-m",
-            "sandbox_runtime.entrypoint",  # Run the supervisor entrypoint
+            "sandbox_runtime.supervisor",  # Run the supervisor entrypoint
             **create_kwargs,
         )
 
@@ -386,7 +386,7 @@ class SandboxManager:
         sandbox = await modal.Sandbox.create.aio(
             "python",
             "-m",
-            "sandbox_runtime.entrypoint",
+            "sandbox_runtime.supervisor",
             image=base_image,
             app=app,
             secrets=[],
@@ -618,7 +618,7 @@ class SandboxManager:
         sandbox = await modal.Sandbox.create.aio(
             "python",
             "-m",
-            "sandbox_runtime.entrypoint",
+            "sandbox_runtime.supervisor",
             **create_kwargs,
         )
 

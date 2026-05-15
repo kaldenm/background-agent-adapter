@@ -80,7 +80,7 @@ def create_base_snapshot(daytona: Daytona, repo_root: Path, snapshot_name: str) 
         CreateSnapshotParams(
             name=snapshot_name,
             image=image,
-            entrypoint=["python", "-m", "sandbox_runtime.entrypoint"],
+            entrypoint=["python", "-m", "sandbox_runtime.supervisor"],
         ),
         on_logs=lambda chunk: print(chunk, end="\n"),
     )
