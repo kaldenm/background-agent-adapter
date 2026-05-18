@@ -14,8 +14,8 @@ const execFileAsync = promisify(execFile);
 // Debug: Log that the tool was loaded
 console.log("[create-pull-request] Tool module loaded");
 console.log(
-  "[create-pull-request] CONTROL_PLANE_URL:",
-  process.env.CONTROL_PLANE_URL || "<not set>"
+  "[create-pull-request] SERVER_URL:",
+  process.env.SERVER_URL || "<not set>"
 );
 console.log(
   "[create-pull-request] SANDBOX_AUTH_TOKEN:",
@@ -27,7 +27,7 @@ console.log(
 );
 
 // Get bridge configuration from environment
-const BRIDGE_URL = process.env.CONTROL_PLANE_URL || "http://localhost:8787";
+const BRIDGE_URL = process.env.SERVER_URL || "http://localhost:8787";
 const BRIDGE_TOKEN = process.env.SANDBOX_AUTH_TOKEN || "";
 
 // Get session ID from SESSION_CONFIG

@@ -91,7 +91,7 @@ export async function getAvailableRepos(env: Env, traceId?: string): Promise<Rep
         headers,
       });
     } else {
-      const url = `${env.CONTROL_PLANE_URL}/repos`;
+      const url = `${env.SERVER_URL}/repos`;
       response = await fetch(url, {
         headers: {
           ...headers,

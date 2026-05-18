@@ -82,7 +82,7 @@ async def test_session_config_includes_branch(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_no_control_plane_or_auth_vars(monkeypatch):
-    """Should NOT include CONTROL_PLANE_URL, SANDBOX_AUTH_TOKEN, or LLM vars."""
+    """Should NOT include SERVER_URL, SANDBOX_AUTH_TOKEN, or LLM vars."""
     captured = {}
     monkeypatch.setattr("src.sandbox.manager.modal.Sandbox.create", _fake_sandbox_create(captured))
 
@@ -93,7 +93,7 @@ async def test_no_control_plane_or_auth_vars(monkeypatch):
     )
 
     env = captured["env"]
-    assert "CONTROL_PLANE_URL" not in env
+    assert "SERVER_URL" not in env
     assert "SANDBOX_AUTH_TOKEN" not in env
     assert "ANTHROPIC_API_KEY" not in env
 

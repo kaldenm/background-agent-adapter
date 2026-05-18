@@ -15,7 +15,7 @@ def bridge() -> AgentBridge:
     b = AgentBridge(
         sandbox_id="test-sandbox",
         session_id="test-session",
-        control_plane_url="http://localhost:8787",
+        server_url="http://localhost:8787",
         auth_token="test-token",
     )
     b._session_id = "oc-session-123"

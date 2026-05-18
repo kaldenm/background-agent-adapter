@@ -13,7 +13,7 @@ class TestIsFatalConnectionError:
         return AgentBridge(
             sandbox_id="test-sandbox",
             session_id="test-session",
-            control_plane_url="https://example.com",
+            server_url="https://example.com",
             auth_token="test-token",
         )
 

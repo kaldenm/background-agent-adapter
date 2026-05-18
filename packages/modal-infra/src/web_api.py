@@ -22,7 +22,7 @@ from .app import (
     function_image,
     github_app_secrets,
     internal_api_secret,
-    validate_control_plane_url,
+    validate_server_url,
 )
 from .auth import AuthConfigurationError, verify_internal_token
 from .log_config import configure_logging, get_logger
@@ -90,9 +90,9 @@ def _resolve_clone_token() -> str | None:
     return None
 
 
-def require_valid_control_plane_url(url: str | None) -> None:
+def require_valid_server_url(url: str | None) -> None:
     """
-    Validate control_plane_url, raising HTTPException on failure.
+    Validate server_url, raising HTTPException on failure.
 
     Args:
         url: The control plane URL to validate
@@ -100,10 +100,10 @@ def require_valid_control_plane_url(url: str | None) -> None:
     Raises:
         HTTPException: 400 if URL is invalid
     """
-    if url and not validate_control_plane_url(url):
+    if url and not validate_server_url(url):
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid control_plane_url: {url}. URL must match allowed patterns.",
+            detail=f"Invalid server_url: {url}. URL must match allowed patterns.",
         )
 
 
@@ -131,7 +131,7 @@ async def api_create_sandbox(
         "sandbox_id": "...",  // Optional: expected sandbox ID from control plane
         "repo_owner": "...",
         "repo_name": "...",
-        "control_plane_url": "...",
+        "server_url": "...",
         "sandbox_auth_token": "...",
         "snapshot_id": null,
         "provider": "anthropic",
@@ -144,8 +144,8 @@ async def api_create_sandbox(
 
     require_auth(authorization)
 
-    control_plane_url = request.get("control_plane_url")
-    require_valid_control_plane_url(control_plane_url)
+    server_url = request.get("server_url")
+    require_valid_server_url(server_url)
 
     try:
         # Import types and manager directly
@@ -173,7 +173,7 @@ async def api_create_sandbox(
             sandbox_id=request.get("sandbox_id"),  # Use control-plane-provided ID for auth
             snapshot_id=request.get("snapshot_id"),
             session_config=session_config,
-            control_plane_url=control_plane_url,
+            server_url=server_url,
             sandbox_auth_token=request.get("sandbox_auth_token"),
             clone_token=clone_token,
             user_env_vars=request.get("user_env_vars") or None,
@@ -242,7 +242,7 @@ async def api_warm_sandbox(
     {
         "repo_owner": "...",
         "repo_name": "...",
-        "control_plane_url": "..."
+        "server_url": "..."
     }
     """
     start_time = time.time()
@@ -251,8 +251,8 @@ async def api_warm_sandbox(
 
     require_auth(authorization)
 
-    control_plane_url = request.get("control_plane_url", "")
-    require_valid_control_plane_url(control_plane_url)
+    server_url = request.get("server_url", "")
+    require_valid_server_url(server_url)
 
     try:
         from .sandbox.manager import SandboxManager
@@ -261,7 +261,7 @@ async def api_warm_sandbox(
         handle = await manager.warm_sandbox(
             repo_owner=request.get("repo_owner"),
             repo_name=request.get("repo_name"),
-            control_plane_url=control_plane_url,
+            server_url=server_url,
         )
 
         return {
@@ -428,7 +428,7 @@ async def api_restore_sandbox(
             "model": "claude-sonnet-4-6"
         },
         "sandbox_id": "...",
-        "control_plane_url": "...",
+        "server_url": "...",
         "sandbox_auth_token": "..."
     }
 
@@ -447,8 +447,8 @@ async def api_restore_sandbox(
 
     require_auth(authorization)
 
-    control_plane_url = request.get("control_plane_url", "")
-    require_valid_control_plane_url(control_plane_url)
+    server_url = request.get("server_url", "")
+    require_valid_server_url(server_url)
 
     snapshot_image_id = request.get("snapshot_image_id")
     if not snapshot_image_id:
@@ -474,7 +474,7 @@ async def api_restore_sandbox(
             snapshot_image_id=snapshot_image_id,
             session_config=session_config,
             sandbox_id=sandbox_id,
-            control_plane_url=control_plane_url,
+            server_url=server_url,
             sandbox_auth_token=sandbox_auth_token,
             clone_token=clone_token,
             user_env_vars=user_env_vars,

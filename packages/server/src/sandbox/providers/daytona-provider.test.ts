@@ -170,7 +170,7 @@ describe("DaytonaSandboxProvider", () => {
 
       expect(envVars.PYTHONUNBUFFERED).toBe("1");
       expect(envVars.SANDBOX_ID).toBe("sandbox-456");
-      expect(envVars.CONTROL_PLANE_URL).toBe("https://server.test");
+      expect(envVars.SERVER_URL).toBe("https://server.test");
       expect(envVars.SANDBOX_AUTH_TOKEN).toBe("auth-token-abc");
       expect(envVars.REPO_OWNER).toBe("testowner");
       expect(envVars.REPO_NAME).toBe("testrepo");

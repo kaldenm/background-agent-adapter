@@ -34,7 +34,7 @@ from ..app import (
     function_image,
     github_app_secrets,
     internal_api_secret,
-    validate_control_plane_url,
+    validate_server_url,
 )
 from ..auth import generate_internal_token
 from ..log_config import get_logger
@@ -202,7 +202,7 @@ async def build_repo_image(
     from ..sandbox.manager import SandboxManager
 
     # Validate callback URL against allowed hosts to prevent SSRF
-    if callback_url and not validate_control_plane_url(callback_url):
+    if callback_url and not validate_server_url(callback_url):
         log.error("build.invalid_callback_url", url=callback_url, build_id=build_id)
         return
 
@@ -462,9 +462,9 @@ async def rebuild_repo_images():
     5. Mark stale builds as failed
     6. Clean up old failed D1 rows
     """
-    control_plane_url = os.environ.get("CONTROL_PLANE_URL", "")
-    if not control_plane_url:
-        log.error("scheduler.no_control_plane_url")
+    server_url = os.environ.get("SERVER_URL", "")
+    if not server_url:
+        log.error("scheduler.no_server_url")
         return
 
     log.info("scheduler.start")
@@ -473,7 +473,7 @@ async def rebuild_repo_images():
 
     try:
         # 1. Get enabled repos
-        enabled_data = await _api_get(f"{control_plane_url}/repo-images/enabled-repos")
+        enabled_data = await _api_get(f"{server_url}/repo-images/enabled-repos")
         enabled_repos: list[dict] = enabled_data.get("repos", [])
 
         if not enabled_repos:
@@ -481,7 +481,7 @@ async def rebuild_repo_images():
             return
 
         # 2. Get current image status (all repos)
-        status_data = await _api_get(f"{control_plane_url}/repo-images/status")
+        status_data = await _api_get(f"{server_url}/repo-images/status")
         all_images: list[dict] = status_data.get("images", [])
 
         # 3. Generate GitHub App token for ls-remote
@@ -502,7 +502,7 @@ async def rebuild_repo_images():
             if _should_rebuild(repo_owner, repo_name, remote_sha, all_images):
                 try:
                     await _api_post(
-                        f"{control_plane_url}/repo-images/trigger/{repo_owner}/{repo_name}",
+                        f"{server_url}/repo-images/trigger/{repo_owner}/{repo_name}",
                     )
                     builds_triggered += 1
                     log.info(
@@ -521,7 +521,7 @@ async def rebuild_repo_images():
         # 5. Mark stale builds as failed
         try:
             result = await _api_post(
-                f"{control_plane_url}/repo-images/mark-stale",
+                f"{server_url}/repo-images/mark-stale",
                 {"max_age_seconds": STALE_BUILD_THRESHOLD_SECONDS},
             )
             stale_count = result.get("markedFailed", 0)
@@ -533,7 +533,7 @@ async def rebuild_repo_images():
         # 6. Clean up old failed builds
         try:
             result = await _api_post(
-                f"{control_plane_url}/repo-images/cleanup",
+                f"{server_url}/repo-images/cleanup",
                 {"max_age_seconds": FAILED_BUILD_CLEANUP_SECONDS},
             )
             deleted = result.get("deleted", 0)

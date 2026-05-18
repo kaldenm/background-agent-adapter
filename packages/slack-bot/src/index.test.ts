@@ -90,7 +90,7 @@ function makeEnv(): Env {
       }),
     } as unknown as Fetcher,
     DEPLOYMENT_NAME: "test",
-    CONTROL_PLANE_URL: "https://control-plane.test",
+    SERVER_URL: "https://control-plane.test",
     WEB_APP_URL: "https://app.test",
     DEFAULT_MODEL: "anthropic/claude-haiku-4-5",
     CLASSIFICATION_MODEL: "anthropic/claude-haiku-4-5",

@@ -13,7 +13,7 @@ def _create_bridge(tmp_path: Path) -> AgentBridge:
     bridge = AgentBridge(
         sandbox_id="test-sandbox",
         session_id="test-session",
-        control_plane_url="http://localhost:8787",
+        server_url="http://localhost:8787",
         auth_token="test-token",
     )
     bridge.repo_path = tmp_path

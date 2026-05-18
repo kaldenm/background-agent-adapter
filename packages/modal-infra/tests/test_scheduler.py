@@ -164,8 +164,8 @@ class TestRebuildRepoImages:
     """Test the rebuild_repo_images cron function (integration-level with mocks)."""
 
     @pytest.mark.asyncio
-    async def test_skips_when_no_control_plane_url(self):
-        """Should log error and return when CONTROL_PLANE_URL is missing."""
+    async def test_skips_when_no_server_url(self):
+        """Should log error and return when SERVER_URL is missing."""
         with patch.dict("os.environ", {}, clear=True):
             # Import fresh to get the function
             from src.scheduler.image_builder import rebuild_repo_images
@@ -178,7 +178,7 @@ class TestRebuildRepoImages:
     async def test_skips_when_no_enabled_repos(self):
         """Should return early when no repos have image building enabled."""
         env = {
-            "CONTROL_PLANE_URL": "https://cp.test",
+            "SERVER_URL": "https://cp.test",
             "MODAL_API_SECRET": "test-secret",
         }
 
@@ -202,7 +202,7 @@ class TestRebuildRepoImages:
     async def test_triggers_build_on_sha_mismatch(self):
         """Should trigger a build when remote SHA differs from ready image."""
         env = {
-            "CONTROL_PLANE_URL": "https://cp.test",
+            "SERVER_URL": "https://cp.test",
             "MODAL_API_SECRET": "test-secret",
         }
 
@@ -270,7 +270,7 @@ class TestRebuildRepoImages:
     async def test_skips_build_when_sha_matches(self):
         """Should not trigger a build when SHAs match."""
         env = {
-            "CONTROL_PLANE_URL": "https://cp.test",
+            "SERVER_URL": "https://cp.test",
             "MODAL_API_SECRET": "test-secret",
         }
 
@@ -329,7 +329,7 @@ class TestRebuildRepoImages:
     async def test_calls_mark_stale_and_cleanup(self):
         """Should call mark-stale and cleanup endpoints."""
         env = {
-            "CONTROL_PLANE_URL": "https://cp.test",
+            "SERVER_URL": "https://cp.test",
             "MODAL_API_SECRET": "test-secret",
         }
 

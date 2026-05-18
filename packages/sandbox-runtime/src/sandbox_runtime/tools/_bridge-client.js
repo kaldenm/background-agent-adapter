@@ -5,7 +5,7 @@
  * without a default tool export, so the underscore prefix is just a hint.
  */
 
-const BRIDGE_URL = process.env.CONTROL_PLANE_URL || "http://localhost:8787";
+const BRIDGE_URL = process.env.SERVER_URL || "http://localhost:8787";
 const BRIDGE_TOKEN = process.env.SANDBOX_AUTH_TOKEN;
 
 if (!BRIDGE_TOKEN) {

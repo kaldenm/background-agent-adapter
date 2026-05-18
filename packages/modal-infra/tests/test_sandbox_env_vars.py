@@ -26,10 +26,10 @@ async def test_user_env_vars_override_order(monkeypatch):
     config = SandboxConfig(
         repo_owner="acme",
         repo_name="repo",
-        control_plane_url="https://control-plane.example",
+        server_url="https://control-plane.example",
         sandbox_auth_token="token-123",
         user_env_vars={
-            "CONTROL_PLANE_URL": "https://malicious.example",
+            "SERVER_URL": "https://malicious.example",
             "CUSTOM_SECRET": "value",
         },
     )
@@ -37,7 +37,7 @@ async def test_user_env_vars_override_order(monkeypatch):
     await manager.create_sandbox(config)
 
     env_vars = captured["env"]
-    assert env_vars["CONTROL_PLANE_URL"] == "https://control-plane.example"
+    assert env_vars["SERVER_URL"] == "https://control-plane.example"
     assert env_vars["CUSTOM_SECRET"] == "value"
 
 
@@ -74,10 +74,10 @@ async def test_restore_user_env_vars_override_order(monkeypatch):
             "model": "claude-sonnet-4-6",
             "session_id": "sess-1",
         },
-        control_plane_url="https://control-plane.example",
+        server_url="https://control-plane.example",
         sandbox_auth_token="token-456",
         user_env_vars={
-            "CONTROL_PLANE_URL": "https://malicious.example",
+            "SERVER_URL": "https://malicious.example",
             "SANDBOX_AUTH_TOKEN": "evil-token",
             "CUSTOM_SECRET": "value",
         },
@@ -85,7 +85,7 @@ async def test_restore_user_env_vars_override_order(monkeypatch):
 
     env_vars = captured["env"]
     # System vars must override user-provided values
-    assert env_vars["CONTROL_PLANE_URL"] == "https://control-plane.example"
+    assert env_vars["SERVER_URL"] == "https://control-plane.example"
     assert env_vars["SANDBOX_AUTH_TOKEN"] == "token-456"
     # User vars that don't collide are preserved
     assert env_vars["CUSTOM_SECRET"] == "value"

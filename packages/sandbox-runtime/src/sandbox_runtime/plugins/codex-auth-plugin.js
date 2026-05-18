@@ -41,15 +41,15 @@ function getSessionId() {
 }
 
 async function refreshViaControlPlane() {
-  const controlPlaneUrl = process.env.CONTROL_PLANE_URL;
+  const serverUrl = process.env.SERVER_URL;
   const authToken = process.env.SANDBOX_AUTH_TOKEN;
   const sessionId = getSessionId();
 
-  if (!controlPlaneUrl || !authToken || !sessionId) {
+  if (!serverUrl || !authToken || !sessionId) {
     throw new Error(
       "Missing environment for token refresh: " +
         [
-          !controlPlaneUrl && "CONTROL_PLANE_URL",
+          !serverUrl && "SERVER_URL",
           !authToken && "SANDBOX_AUTH_TOKEN",
           !sessionId && "SESSION_CONFIG.sessionId",
         ]
@@ -58,7 +58,7 @@ async function refreshViaControlPlane() {
     );
   }
 
-  const response = await fetch(`${controlPlaneUrl}/sessions/${sessionId}/openai-token-refresh`, {
+  const response = await fetch(`${serverUrl}/sessions/${sessionId}/openai-token-refresh`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${authToken}`,

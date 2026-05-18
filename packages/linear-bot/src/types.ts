@@ -14,7 +14,7 @@ export interface Env {
 
   // Environment variables
   DEPLOYMENT_NAME: string;
-  CONTROL_PLANE_URL: string;
+  SERVER_URL: string;
   WEB_APP_URL: string;
   DEFAULT_MODEL: string;
 

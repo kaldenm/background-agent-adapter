@@ -211,7 +211,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     Object.assign(envVars, {
       PYTHONUNBUFFERED: "1",
       SANDBOX_ID: config.sandboxId,
-      CONTROL_PLANE_URL: config.serverUrl,
+      SERVER_URL: config.serverUrl,
       SANDBOX_AUTH_TOKEN: config.sandboxAuthToken,
       REPO_OWNER: config.repoOwner,
       REPO_NAME: config.repoName,

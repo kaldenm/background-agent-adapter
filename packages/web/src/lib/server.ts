@@ -13,11 +13,11 @@ import { buildInternalAuthHeaders } from "@open-inspect/shared";
  * Get the control plane URL from environment.
  * Throws if not configured.
  */
-function getControlPlaneUrl(): string {
-  const url = process.env.CONTROL_PLANE_URL;
+function getServerUrl(): string {
+  const url = process.env.SERVER_URL;
   if (!url) {
-    console.error("[server] CONTROL_PLANE_URL not configured");
-    throw new Error("CONTROL_PLANE_URL not configured");
+    console.error("[server] SERVER_URL not configured");
+    throw new Error("SERVER_URL not configured");
   }
   return url;
 }
@@ -118,11 +118,11 @@ export async function serverFetch(path: string, options: RequestInit = {}): Prom
   // On Cloudflare Workers, use the service binding to call the control plane
   const binding = await getServiceBinding();
   if (binding) {
-    const baseUrl = getControlPlaneUrl().replace(/\/+$/, "");
+    const baseUrl = getServerUrl().replace(/\/+$/, "");
     return binding.fetch(`${baseUrl}${normalizedPath}`, fetchOptions);
   }
 
   // Fallback: direct fetch (works on Vercel / local dev)
-  const baseUrl = getControlPlaneUrl().replace(/\/+$/, "");
+  const baseUrl = getServerUrl().replace(/\/+$/, "");
   return fetch(`${baseUrl}${normalizedPath}`, fetchOptions);
 }

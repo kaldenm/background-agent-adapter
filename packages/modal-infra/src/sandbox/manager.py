@@ -42,7 +42,7 @@ class SandboxConfig:
     sandbox_id: str | None = None  # Expected sandbox ID from control plane
     snapshot_id: str | None = None
     session_config: SessionConfig | None = None
-    control_plane_url: str = ""
+    server_url: str = ""
     sandbox_auth_token: str = ""
     timeout_seconds: int = DEFAULT_SANDBOX_TIMEOUT_SECONDS
     clone_token: str | None = None  # VCS clone token for git operations
@@ -256,7 +256,7 @@ class SandboxManager:
             {
                 "PYTHONUNBUFFERED": "1",  # Ensure logs are flushed immediately
                 "SANDBOX_ID": sandbox_id,
-                "CONTROL_PLANE_URL": config.control_plane_url,
+                "SERVER_URL": config.server_url,
                 "SANDBOX_AUTH_TOKEN": config.sandbox_auth_token,
                 "REPO_OWNER": config.repo_owner,
                 "REPO_NAME": config.repo_name,
@@ -352,7 +352,7 @@ class SandboxManager:
 
         Like create_sandbox() but:
         - Sets IMAGE_BUILD_MODE=true (exits after setup, no OpenCode/bridge)
-        - No SANDBOX_AUTH_TOKEN, CONTROL_PLANE_URL, or LLM secrets
+        - No SANDBOX_AUTH_TOKEN, SERVER_URL, or LLM secrets
         - Shorter timeout (30 min vs 2 hours)
         - Always uses base_image (builds start from the universal base)
 
@@ -419,7 +419,7 @@ class SandboxManager:
         self,
         repo_owner: str,
         repo_name: str,
-        control_plane_url: str = "",
+        server_url: str = "",
     ) -> SandboxHandle:
         """
         Pre-warm a sandbox for a repository.
@@ -430,7 +430,7 @@ class SandboxManager:
         Args:
             repo_owner: GitHub repository owner
             repo_name: GitHub repository name
-            control_plane_url: URL for the control plane WebSocket
+            server_url: URL for the server WebSocket
 
         Returns:
             SandboxHandle for the warming sandbox
@@ -445,7 +445,7 @@ class SandboxManager:
         config = SandboxConfig(
             repo_owner=repo_owner,
             repo_name=repo_name,
-            control_plane_url=control_plane_url,
+            server_url=server_url,
         )
 
         return await self.create_sandbox(config)
@@ -526,7 +526,7 @@ class SandboxManager:
         snapshot_image_id: str,
         session_config: SessionConfig | dict,
         sandbox_id: str | None = None,
-        control_plane_url: str = "",
+        server_url: str = "",
         sandbox_auth_token: str = "",
         clone_token: str | None = None,
         user_env_vars: dict[str, str] | None = None,
@@ -544,7 +544,7 @@ class SandboxManager:
             snapshot_image_id: Modal Image ID from snapshot_filesystem()
             session_config: Session configuration (SessionConfig or dict)
             sandbox_id: Optional sandbox ID (generated if not provided)
-            control_plane_url: URL for the control plane
+            server_url: URL for the server
             sandbox_auth_token: Auth token for the sandbox
             clone_token: VCS clone token for git operations
 
@@ -580,7 +580,7 @@ class SandboxManager:
             {
                 "PYTHONUNBUFFERED": "1",
                 "SANDBOX_ID": sandbox_id,
-                "CONTROL_PLANE_URL": control_plane_url,
+                "SERVER_URL": server_url,
                 "SANDBOX_AUTH_TOKEN": sandbox_auth_token,
                 "REPO_OWNER": repo_owner,
                 "REPO_NAME": repo_name,

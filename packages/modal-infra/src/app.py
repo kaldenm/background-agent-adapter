@@ -85,9 +85,9 @@ def _get_allowed_hosts() -> set[str]:
     return {h.strip().lower() for h in hosts_str.split(",") if h.strip()}
 
 
-def validate_control_plane_url(url: str | None) -> bool:
+def validate_server_url(url: str | None) -> bool:
     """
-    Validate that a control_plane_url is allowed.
+    Validate that a server_url is allowed.
 
     Validation rules:
     1. Empty/None URLs are allowed (optional field)

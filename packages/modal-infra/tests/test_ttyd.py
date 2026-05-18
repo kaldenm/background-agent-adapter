@@ -134,7 +134,7 @@ class TestCreateSandboxTerminal:
         config = SandboxConfig(
             repo_owner="acme",
             repo_name="repo",
-            control_plane_url="https://cp.example.com",
+            server_url="https://cp.example.com",
             sandbox_auth_token="token-123",
             code_server_enabled=False,
             settings={"terminalEnabled": True},
@@ -171,7 +171,7 @@ class TestCreateSandboxTerminal:
         config = SandboxConfig(
             repo_owner="acme",
             repo_name="repo",
-            control_plane_url="https://cp.example.com",
+            server_url="https://cp.example.com",
             sandbox_auth_token="token-123",
             code_server_enabled=False,
         )
@@ -226,7 +226,7 @@ class TestRestoreSandboxTerminal:
                 "model": "claude-sonnet-4-6",
                 "session_id": "sess-1",
             },
-            control_plane_url="https://cp.example.com",
+            server_url="https://cp.example.com",
             sandbox_auth_token="token-456",
             code_server_enabled=False,
             settings={"terminalEnabled": True},
@@ -273,7 +273,7 @@ class TestRestoreSandboxTerminal:
                 "model": "claude-sonnet-4-6",
                 "session_id": "sess-1",
             },
-            control_plane_url="https://cp.example.com",
+            server_url="https://cp.example.com",
             sandbox_auth_token="token-456",
             code_server_enabled=False,
         )

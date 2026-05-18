@@ -22,7 +22,7 @@ def _tool_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
     env.update(
         {
-            "CONTROL_PLANE_URL": "https://cp.example.com",
+            "SERVER_URL": "https://cp.example.com",
             "SANDBOX_AUTH_TOKEN": "sandbox-token",
             "SESSION_CONFIG": json.dumps({"sessionId": "session-1"}),
         }

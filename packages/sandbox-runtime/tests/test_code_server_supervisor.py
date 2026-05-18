@@ -15,7 +15,7 @@ class TestCodeServerMonitorRestart:
             "os.environ",
             {
                 "SANDBOX_ID": "test-sandbox",
-                "CONTROL_PLANE_URL": "https://cp.example.com",
+                "SERVER_URL": "https://cp.example.com",
                 "SANDBOX_AUTH_TOKEN": "tok",
                 "REPO_OWNER": "acme",
                 "REPO_NAME": "app",

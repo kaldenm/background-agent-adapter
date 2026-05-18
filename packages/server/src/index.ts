@@ -11,7 +11,7 @@ import type { Env } from "./types";
 const logger = createLogger("worker");
 
 // Re-export Durable Objects for Cloudflare to discover
-export { SessionDO } from "./session/session";
+export { Session as SessionDO } from "./session/session";
 export { SchedulerDO } from "./scheduler/scheduler";
 
 /**

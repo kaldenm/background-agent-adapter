@@ -119,13 +119,13 @@ class AgentBridge:
         self,
         sandbox_id: str,
         session_id: str,
-        control_plane_url: str,
+        server_url: str,
         auth_token: str,
         adapter: AgentAdapter | None = None,
     ):
         self.sandbox_id = sandbox_id
         self.session_id = session_id
-        self.control_plane_url = control_plane_url
+        self.server_url = server_url
         self.auth_token = auth_token
 
         if adapter is None:
@@ -165,7 +165,7 @@ class AgentBridge:
     @property
     def ws_url(self) -> str:
         """WebSocket URL for control plane connection."""
-        url = self.control_plane_url.replace("https://", "wss://").replace("http://", "ws://")
+        url = self.server_url.replace("https://", "wss://").replace("http://", "ws://")
         return f"{url}/sessions/{self.session_id}/ws?type=sandbox"
 
     @staticmethod
@@ -883,7 +883,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Open-Inspect Agent Bridge")
     parser.add_argument("--sandbox-id", required=True, help="Sandbox ID")
     parser.add_argument("--session-id", required=True, help="Session ID for WebSocket connection")
-    parser.add_argument("--control-plane", required=True, help="Control plane URL")
+    parser.add_argument("--server-url", required=True, help="Server URL")
     parser.add_argument("--token", required=True, help="Auth token")
 
     args = parser.parse_args()
@@ -896,7 +896,7 @@ async def main() -> None:
     bridge = AgentBridge(
         sandbox_id=args.sandbox_id,
         session_id=args.session_id,
-        control_plane_url=args.control_plane,
+        server_url=args.server_url,
         auth_token=args.token,
         adapter=adapter,
     )

@@ -9,7 +9,7 @@ def _make_supervisor(env_overrides: dict[str, str] | None = None) -> SandboxSupe
     """Create a SandboxSupervisor with controlled env vars."""
     base_env = {
         "SANDBOX_ID": "test-sandbox",
-        "CONTROL_PLANE_URL": "https://cp.example.com",
+        "SERVER_URL": "https://cp.example.com",
         "SANDBOX_AUTH_TOKEN": "tok",
         "REPO_OWNER": "acme",
         "REPO_NAME": "app",
