@@ -883,6 +883,7 @@ async function handleCreateSession(
     actorDisplayName?: string;
     actorEmail?: string;
     actorAvatarUrl?: string;
+    prompt?: string;
   };
 
   if (!body.repoOwner || !body.repoName) {
@@ -977,14 +978,7 @@ async function handleCreateSession(
     }
   }
 
-  // Generate session ID
-  const sessionId = generateId();
-
-  // Get Durable Object
-  const doId = env.SESSION.idFromName(sessionId);
-  const stub = env.SESSION.get(doId);
-
-  // Validate model and reasoning effort once for both DO init and D1 index
+  // Validate model and reasoning effort
   const model = getValidModelOrDefault(body.model);
   const reasoningEffort =
     body.reasoningEffort && isValidReasoningEffort(model, body.reasoningEffort)
@@ -997,63 +991,54 @@ async function handleCreateSession(
     resolveSandboxSettings(env.DB, repoOwner, repoName),
   ]);
 
-  // Store session in D1 before initializing the SessionDO. SessionDO init starts
-  // sandbox warming, so D1 failures must fail before any sandbox can be spawned.
-  const now = Date.now();
-  const sessionStore = new SessionIndexStore(env.DB);
-  await sessionStore.create({
-    id: sessionId,
-    title: body.title || null,
-    repoOwner,
-    repoName,
-    model,
-    reasoningEffort,
-    baseBranch: body.branch || defaultBranch || "main",
-    status: "created",
-    spawnSource: body.spawnSource,
-    scmLogin: scmLogin || null,
-    userId: resolvedUserId,
-    createdAt: now,
-    updatedAt: now,
+  // Dispatch to scheduler — the single door for all session creation
+  if (!env.SCHEDULER) {
+    return error("Scheduler not configured", 503);
+  }
+
+  const schedulerDoId = env.SCHEDULER.idFromName("global-scheduler");
+  const schedulerStub = env.SCHEDULER.get(schedulerDoId);
+
+  const dispatchRes = await schedulerStub.fetch("https://internal/internal/dispatch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session: {
+        repoOwner,
+        repoName,
+        repoId,
+        defaultBranch,
+        userId: resolvedUserId ?? userId,
+        spawnSource: body.spawnSource ?? "user",
+        title: body.title,
+        model,
+        reasoningEffort,
+        branch: body.branch,
+        scmLogin,
+        scmName,
+        scmEmail,
+        scmTokenEncrypted,
+        scmRefreshTokenEncrypted,
+        scmTokenExpiresAt,
+        scmUserId,
+        codeServerEnabled,
+        sandboxSettings,
+      },
+      prompt: body.prompt
+        ? {
+            content: body.prompt,
+            authorId: resolvedUserId ?? userId,
+            source: "user",
+          }
+        : undefined,
+    }),
   });
 
-  // Initialize session with user info and optional encrypted token
-  const initResponse = await stub.fetch(
-    internalRequest(
-      buildSessionInternalUrl(SessionInternalPaths.init),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionName: sessionId, // Pass the session name for WebSocket routing
-          repoOwner,
-          repoName,
-          repoId,
-          defaultBranch,
-          branch: body.branch,
-          title: body.title,
-          model,
-          reasoningEffort,
-          userId,
-          scmLogin,
-          scmName,
-          scmEmail,
-          scmTokenEncrypted,
-          scmRefreshTokenEncrypted,
-          scmTokenExpiresAt,
-          scmUserId,
-          codeServerEnabled,
-          sandboxSettings,
-          spawnSource: body.spawnSource,
-        }),
-      },
-      ctx
-    )
-  );
-
-  if (!initResponse.ok) {
+  if (!dispatchRes.ok) {
     return error("Failed to create session", 500);
   }
+
+  const { sessionId } = (await dispatchRes.json()) as { sessionId: string };
 
   // Populate D1 with the user's SCM tokens (non-blocking) so centralized refresh works
   if (scmUserId && scmToken && scmRefreshToken && env.TOKEN_ENCRYPTION_KEY) {
@@ -1074,12 +1059,7 @@ async function handleCreateSession(
     );
   }
 
-  const result: CreateSessionResponse = {
-    sessionId,
-    status: "created",
-  };
-
-  return json(result, 201);
+  return json({ sessionId, status: "created" } as CreateSessionResponse, 201);
 }
 
 async function handleGetSession(
@@ -2013,11 +1993,6 @@ async function handleSpawnChild(
     return error("Child sessions must use the same repository as the parent", 403);
   }
 
-  // Create child session (same pattern as handleCreateSession)
-  const childId = generateId();
-  const childDoId = env.SESSION.idFromName(childId);
-  const childStub = env.SESSION.get(childDoId);
-
   // Validate explicit model from the agent; reject invalid names so the agent
   // can self-correct instead of silently falling back to the default model.
   const rawModel = body.model ?? spawnContext.model;
@@ -2032,122 +2007,67 @@ async function handleSpawnChild(
 
   const childDepth = parentDepth + 1;
 
-  logger.info("Spawning child session", {
-    event: "session.spawn_child",
-    parent_id: parentId,
-    child_id: childId,
-    child_depth: childDepth,
-    model,
-  });
-
   // Resolve code-server integration setting and sandbox settings for child (same repo as parent)
   const [childCodeServerEnabled, childSandboxSettings] = await Promise.all([
     resolveCodeServerEnabled(env.DB, spawnContext.repoOwner, spawnContext.repoName),
     resolveSandboxSettings(env.DB, spawnContext.repoOwner, spawnContext.repoName),
   ]);
 
-  // Initialize child DO
-  const initResponse = await childStub.fetch(
-    internalRequest(
-      buildSessionInternalUrl(SessionInternalPaths.init),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionName: childId,
-          repoOwner: spawnContext.repoOwner,
-          repoName: spawnContext.repoName,
-          repoId: spawnContext.repoId,
-          title: body.title,
-          model,
-          reasoningEffort,
-          userId: spawnContext.owner.userId,
-          scmLogin: spawnContext.owner.scmLogin,
-          scmName: spawnContext.owner.scmName,
-          scmEmail: spawnContext.owner.scmEmail,
-          scmTokenEncrypted: spawnContext.owner.scmAccessTokenEncrypted,
-          scmRefreshTokenEncrypted: spawnContext.owner.scmRefreshTokenEncrypted,
-          scmTokenExpiresAt: spawnContext.owner.scmTokenExpiresAt,
-          scmUserId: spawnContext.owner.scmUserId,
-          branch: spawnContext.baseBranch ?? "main",
-          parentSessionId: parentId,
-          spawnSource: "agent",
-          spawnDepth: childDepth,
-          codeServerEnabled: childCodeServerEnabled,
-          sandboxSettings: childSandboxSettings,
-        }),
-      },
-      ctx
-    )
-  );
+  // Dispatch to scheduler — the single door for all session creation
+  if (!env.SCHEDULER) {
+    return error("Scheduler not configured", 503);
+  }
 
-  if (!initResponse.ok) {
+  const schedulerDoId = env.SCHEDULER.idFromName("global-scheduler");
+  const schedulerStub = env.SCHEDULER.get(schedulerDoId);
+
+  const dispatchRes = await schedulerStub.fetch("https://internal/internal/dispatch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session: {
+        repoOwner: spawnContext.repoOwner,
+        repoName: spawnContext.repoName,
+        repoId: spawnContext.repoId,
+        userId: parentUserId ?? spawnContext.owner.userId,
+        spawnSource: "agent" as const,
+        title: body.title,
+        model,
+        reasoningEffort,
+        branch: spawnContext.baseBranch ?? "main",
+        parentSessionId: parentId,
+        spawnDepth: childDepth,
+        scmLogin: spawnContext.owner.scmLogin,
+        scmName: spawnContext.owner.scmName,
+        scmEmail: spawnContext.owner.scmEmail,
+        scmTokenEncrypted: spawnContext.owner.scmAccessTokenEncrypted,
+        scmRefreshTokenEncrypted: spawnContext.owner.scmRefreshTokenEncrypted,
+        scmTokenExpiresAt: spawnContext.owner.scmTokenExpiresAt,
+        scmUserId: spawnContext.owner.scmUserId,
+        codeServerEnabled: childCodeServerEnabled,
+        sandboxSettings: childSandboxSettings,
+      },
+      prompt: {
+        content: body.prompt,
+        authorId: spawnContext.owner.userId,
+        source: "agent",
+      },
+    }),
+  });
+
+  if (!dispatchRes.ok) {
     return error("Failed to create child session", 500);
   }
 
-  // Store in D1 index
-  const now = Date.now();
-  await sessionStore.create({
-    id: childId,
-    title: body.title,
-    repoOwner: spawnContext.repoOwner,
-    repoName: spawnContext.repoName,
+  const { sessionId: childId } = (await dispatchRes.json()) as { sessionId: string };
+
+  logger.info("Spawning child session via scheduler", {
+    event: "session.spawn_child",
+    parent_id: parentId,
+    child_id: childId,
+    child_depth: childDepth,
     model,
-    reasoningEffort,
-    baseBranch: spawnContext.baseBranch ?? "main",
-    status: "created",
-    parentSessionId: parentId,
-    spawnSource: "agent",
-    spawnDepth: childDepth,
-    scmLogin: spawnContext.owner.scmLogin || null,
-    userId: parentUserId,
-    createdAt: now,
-    updatedAt: now,
   });
-
-  // Enqueue the prompt on the child DO
-  let promptResponse: Response;
-  try {
-    promptResponse = await childStub.fetch(
-      internalRequest(
-        buildSessionInternalUrl(SessionInternalPaths.prompt),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            content: body.prompt,
-            authorId: spawnContext.owner.userId,
-            source: "agent",
-          }),
-        },
-        ctx
-      )
-    );
-  } catch (enqueueError) {
-    logger.error("Failed to enqueue initial prompt for child session", {
-      event: "session.spawn_child_prompt_enqueue_failed",
-      parent_id: parentId,
-      child_id: childId,
-      trace_id: ctx.trace_id,
-      request_id: ctx.request_id,
-      error: enqueueError instanceof Error ? enqueueError.message : String(enqueueError),
-    });
-    await sessionStore.updateStatus(childId, "failed");
-    return error("Failed to enqueue child session prompt", 500);
-  }
-
-  if (!promptResponse.ok) {
-    logger.error("Failed to enqueue initial prompt for child session", {
-      event: "session.spawn_child_prompt_enqueue_failed",
-      parent_id: parentId,
-      child_id: childId,
-      prompt_status: promptResponse.status,
-      trace_id: ctx.trace_id,
-      request_id: ctx.request_id,
-    });
-    await sessionStore.updateStatus(childId, "failed");
-    return error("Failed to enqueue child session prompt", 500);
-  }
 
   // Notify parent session so connected clients can refresh child list
   ctx.executionCtx?.waitUntil(

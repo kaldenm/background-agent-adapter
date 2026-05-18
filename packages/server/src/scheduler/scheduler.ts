@@ -634,15 +634,15 @@ export class Scheduler extends DurableObject<Env> {
   private async handleDispatch(request: Request): Promise<Response> {
     const body = (await request.json()) as {
       session: CreateSessionOptions;
-      prompt: {
+      prompt?: {
         content: string;
         authorId: string;
         source?: string;
       };
     };
 
-    if (!body.session || !body.prompt) {
-      return new Response(JSON.stringify({ error: "session and prompt are required" }), {
+    if (!body.session) {
+      return new Response(JSON.stringify({ error: "session is required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
@@ -651,11 +651,13 @@ export class Scheduler extends DurableObject<Env> {
     try {
       const { sessionId } = await createSession(this.env, body.session);
 
-      await promptSession(this.env, sessionId, {
-        content: body.prompt.content,
-        authorId: body.prompt.authorId,
-        source: body.prompt.source ?? "bot",
-      });
+      if (body.prompt) {
+        await promptSession(this.env, sessionId, {
+          content: body.prompt.content,
+          authorId: body.prompt.authorId,
+          source: body.prompt.source ?? "bot",
+        });
+      }
 
       this.log.info("Direct dispatch succeeded", {
         event: "scheduler.dispatch",

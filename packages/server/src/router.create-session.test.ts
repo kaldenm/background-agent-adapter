@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateInternalToken } from "./auth/internal";
-import { SessionIndexStore } from "./db/session-index";
 import { handleRequest } from "./router";
 import { resolveRepoOrError } from "./routes/shared";
-import { SessionInternalPaths } from "./session/contracts";
 
 vi.mock("./db/session-index", () => ({
   SessionIndexStore: vi.fn(),
@@ -17,7 +15,7 @@ vi.mock("./routes/shared", async (importOriginal) => {
   };
 });
 
-describe("handleCreateSession D1 ordering", () => {
+describe("handleCreateSession scheduler dispatch", () => {
   const secret = "test-internal-secret";
 
   beforeEach(() => {
@@ -28,7 +26,10 @@ describe("handleCreateSession D1 ordering", () => {
     } as never);
   });
 
-  async function createSessionRequest(env: Record<string, unknown>): Promise<Response> {
+  async function createSessionRequest(
+    env: Record<string, unknown>,
+    bodyOverrides?: Record<string, unknown>
+  ): Promise<Response> {
     const token = await generateInternalToken(secret);
 
     return handleRequest(
@@ -42,14 +43,27 @@ describe("handleCreateSession D1 ordering", () => {
           repoOwner: "Acme",
           repoName: "Web-App",
           title: "Test session",
-          model: "anthropic/claude-haiku-4-5",
+          model: "anthropic/claude-sonnet-4-6",
+          ...bodyOverrides,
         }),
       }),
       env as never
     );
   }
 
-  function createEnv(initFetch: ReturnType<typeof vi.fn>): Record<string, unknown> {
+  function createSchedulerFetch(
+    responseBody: Record<string, unknown> = { sessionId: "sched-session-1", status: "created" },
+    status = 201
+  ) {
+    return vi.fn(async () =>
+      new Response(JSON.stringify(responseBody), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+  }
+
+  function createEnv(schedulerFetch: ReturnType<typeof vi.fn>): Record<string, unknown> {
     const statement = {
       bind: vi.fn(() => statement),
       first: vi.fn(async () => null),
@@ -68,37 +82,74 @@ describe("handleCreateSession D1 ordering", () => {
       },
       SESSION: {
         idFromName: (name: string) => name,
-        get: () => ({ fetch: initFetch }),
+        get: () => ({ fetch: vi.fn() }),
+      },
+      SCHEDULER: {
+        idFromName: (_name: string) => "scheduler-do-id",
+        get: () => ({ fetch: schedulerFetch }),
       },
     };
   }
 
-  it("does not initialize the SessionDO when D1 session index creation fails", async () => {
-    const create = vi.fn().mockRejectedValue(new Error("D1 unavailable"));
-    vi.mocked(SessionIndexStore).mockImplementation(() => ({ create }) as never);
-
-    const initFetch = vi.fn(async () => Response.json({ status: "created" }));
-    const response = await createSessionRequest(createEnv(initFetch));
-
-    expect(response.status).toBe(500);
-    expect(create).toHaveBeenCalledOnce();
-    expect(initFetch).not.toHaveBeenCalled();
-  });
-
-  it("creates the D1 session index before initializing the SessionDO", async () => {
-    const create = vi.fn().mockResolvedValue(undefined);
-    vi.mocked(SessionIndexStore).mockImplementation(() => ({ create }) as never);
-
-    const initFetch = vi.fn(async (request: Request) => {
-      expect(new URL(request.url).pathname).toBe(SessionInternalPaths.init);
-      return Response.json({ status: "created" });
-    });
-
-    const response = await createSessionRequest(createEnv(initFetch));
+  it("dispatches to the scheduler and returns the session ID", async () => {
+    const schedulerFetch = createSchedulerFetch();
+    const response = await createSessionRequest(createEnv(schedulerFetch));
 
     expect(response.status).toBe(201);
-    expect(create).toHaveBeenCalledOnce();
-    expect(initFetch).toHaveBeenCalledOnce();
-    expect(create.mock.invocationCallOrder[0]).toBeLessThan(initFetch.mock.invocationCallOrder[0]);
+    const payload = await response.json<{ sessionId: string; status: string }>();
+    expect(payload.sessionId).toBe("sched-session-1");
+    expect(payload.status).toBe("created");
+
+    // Verify scheduler was called
+    expect(schedulerFetch).toHaveBeenCalledOnce();
+    const [url, init] = schedulerFetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://internal/internal/dispatch");
+
+    // Verify dispatch payload
+    const dispatchBody = JSON.parse(init.body as string);
+    expect(dispatchBody.session.repoOwner).toBe("acme");
+    expect(dispatchBody.session.repoName).toBe("web-app");
+    expect(dispatchBody.session.model).toBe("anthropic/claude-sonnet-4-6");
+  });
+
+  it("returns 500 when scheduler dispatch fails", async () => {
+    const schedulerFetch = createSchedulerFetch({ error: "internal" }, 500);
+    const response = await createSessionRequest(createEnv(schedulerFetch));
+
+    expect(response.status).toBe(500);
+    const payload = await response.json<{ error: string }>();
+    expect(payload.error).toBe("Failed to create session");
+  });
+
+  it("returns 503 when scheduler is not configured", async () => {
+    const env = createEnv(vi.fn());
+    delete env.SCHEDULER;
+
+    const response = await createSessionRequest(env);
+    expect(response.status).toBe(503);
+  });
+
+  it("sends prompt in dispatch payload when provided", async () => {
+    const schedulerFetch = createSchedulerFetch();
+    const response = await createSessionRequest(createEnv(schedulerFetch), {
+      prompt: "Build the thing",
+    });
+
+    expect(response.status).toBe(201);
+    const [, init2] = schedulerFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const dispatchBody = JSON.parse(init2.body as string);
+    expect(dispatchBody.prompt).toBeDefined();
+    expect(dispatchBody.prompt.content).toBe("Build the thing");
+    expect(dispatchBody.prompt.source).toBe("user");
+  });
+
+  it("omits prompt from dispatch payload when not provided", async () => {
+    const schedulerFetch = createSchedulerFetch();
+    const response = await createSessionRequest(createEnv(schedulerFetch));
+
+    expect(response.status).toBe(201);
+    const [, init3] = schedulerFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const dispatchBody = JSON.parse(init3.body as string);
+    expect(dispatchBody.prompt).toBeUndefined();
   });
 });
