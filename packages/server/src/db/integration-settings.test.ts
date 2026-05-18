@@ -280,7 +280,7 @@ describe("IntegrationSettingsStore", () => {
     it("validates defaults.reasoningEffort on setGlobal", async () => {
       await expect(
         store.setGlobal("github", {
-          defaults: { model: "anthropic/claude-haiku-4-5", reasoningEffort: "low" },
+          defaults: { model: "anthropic/claude-opus-4-5", reasoningEffort: "low" },
         })
       ).rejects.toThrow(IntegrationSettingsValidationError);
     });
@@ -328,7 +328,7 @@ describe("IntegrationSettingsStore", () => {
         model: "anthropic/claude-opus-4-6",
       });
       await store.setRepoSettings("github", "acme/gadgets", {
-        model: "anthropic/claude-haiku-4-5",
+        model: "anthropic/claude-opus-4-7",
       });
 
       const list = await store.listRepoSettings("github");
@@ -477,11 +477,11 @@ describe("IntegrationSettingsStore", () => {
         defaults: { model: "anthropic/claude-opus-4-6" },
       });
       await store.setRepoSettings("github", "acme/widgets", {
-        model: "anthropic/claude-haiku-4-5",
+        model: "anthropic/claude-opus-4-7",
       });
 
       const config = await store.getResolvedConfig("github", "acme/widgets");
-      expect(config.settings.model).toBe("anthropic/claude-haiku-4-5");
+      expect(config.settings.model).toBe("anthropic/claude-opus-4-7");
     });
 
     it("handles missing global gracefully", async () => {
@@ -603,7 +603,7 @@ describe("IntegrationSettingsStore", () => {
     it("rejects invalid reasoning effort for model on write", async () => {
       await expect(
         store.setRepoSettings("github", "acme/widgets", {
-          model: "anthropic/claude-haiku-4-5",
+          model: "anthropic/claude-opus-4-5",
           reasoningEffort: "low",
         })
       ).rejects.toThrow(IntegrationSettingsValidationError);

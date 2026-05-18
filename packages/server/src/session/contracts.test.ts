@@ -8,9 +8,10 @@ describe("session internal endpoint contracts", () => {
     const routesSource = readFileSync(new URL("./http/routes.ts", import.meta.url), "utf8");
     const durableObjectSource = readFileSync(new URL("./session.ts", import.meta.url), "utf8");
 
+    // Note: 'init' is not listed here — session init is handled by the scheduler
+    // via create-session.ts, not directly by the router.
     const routerEndpointKeys: Array<keyof typeof SessionInternalPaths> = [
       "verifySandboxToken",
-      "init",
       "state",
       "prompt",
       "stop",
@@ -28,6 +29,7 @@ describe("session internal endpoint contracts", () => {
       "childSessionUpdate",
       "childSummary",
       "cancel",
+      "updateTitle",
     ];
 
     for (const endpointKey of routerEndpointKeys) {
@@ -41,7 +43,25 @@ describe("session internal endpoint contracts", () => {
     }
 
     expect(durableObjectSource).toContain("createSessionInternalRoutes");
-    expect(routerSource).not.toContain("http://internal/internal/");
+    // The router must use SessionInternalPaths constants for session DO calls,
+    // not raw "/internal/..." URLs. The scheduler dispatch URL is an exception
+    // (it targets the scheduler DO, not a session DO).
+    const sessionInternalUrlPattern = /stub\.fetch\(["']http:\/\/internal\/internal\//;
+    const routerWithoutSchedulerDispatch = routerSource.replace(
+      /\/\/ Forward.*handleSchedulerDispatch[\s\S]*?^\}/m,
+      ""
+    );
+    // Check no raw session-internal URLs outside the scheduler dispatch handler
+    for (const line of routerWithoutSchedulerDispatch.split("\n")) {
+      if (
+        line.includes('"http://internal/internal/') &&
+        !line.includes("/internal/dispatch")
+      ) {
+        expect.unreachable(
+          `Raw session-internal URL found in router (use SessionInternalPaths instead): ${line.trim()}`
+        );
+      }
+    }
     expect(routesSource).not.toContain('"/internal/');
     expect(routesSource).not.toContain("'/internal/");
   });

@@ -273,7 +273,7 @@ export class Scheduler extends DurableObject<Env> {
               repoOwner: issue.repoOwner,
               repoName: issue.repoName,
               userId: issue.authorId,
-              spawnSource: issue.source === "github" ? "github" : "linear",
+              spawnSource: issue.source === "github" ? "github-bot" : "linear-bot",
               title: issue.title,
             });
 

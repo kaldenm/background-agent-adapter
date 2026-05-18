@@ -21,7 +21,7 @@ vi.mock("cloudflare:workers", () => ({
 }));
 
 // Must import AFTER vi.mock so the hoisted mock is in place
-const { SchedulerDO } = await import("./scheduler");
+const { Scheduler: SchedulerDO } = await import("./scheduler");
 
 // ─── Mock factories ──────────────────────────────────────────────────────────
 
@@ -348,15 +348,16 @@ describe("SchedulerDO", () => {
       );
     });
 
-    it("creates session with null userId when identity lookup finds nothing", async () => {
+    it("falls back to created_by as userId when identity lookup finds nothing", async () => {
       mockStore.getOverdueAutomations.mockResolvedValue([sampleAutomation]);
       mockUserStoreGetIdentity.mockResolvedValue(null);
 
       const scheduler = createSchedulerDO();
       await scheduler.fetch(new Request("http://internal/internal/tick", { method: "POST" }));
 
+      // When identity lookup returns null, userId falls back to created_by
       expect(mockSessionStoreCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: null })
+        expect.objectContaining({ userId: "user-1" })
       );
     });
 

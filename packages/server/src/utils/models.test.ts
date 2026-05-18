@@ -20,16 +20,14 @@ describe("model utilities", () => {
 
   describe("isValidModel", () => {
     it("returns true for valid models", () => {
-      expect(isValidModel("anthropic/claude-haiku-4-5")).toBe(true);
-      expect(isValidModel("anthropic/claude-sonnet-4-5")).toBe(true);
+      expect(isValidModel("anthropic/claude-sonnet-4-6")).toBe(true);
       expect(isValidModel("anthropic/claude-opus-4-5")).toBe(true);
       expect(isValidModel("anthropic/claude-opus-4-6")).toBe(true);
       expect(isValidModel("anthropic/claude-opus-4-7")).toBe(true);
     });
 
     it("accepts bare Claude model names via normalization", () => {
-      expect(isValidModel("claude-haiku-4-5")).toBe(true);
-      expect(isValidModel("claude-sonnet-4-5")).toBe(true);
+      expect(isValidModel("claude-sonnet-4-6")).toBe(true);
       expect(isValidModel("claude-opus-4-5")).toBe(true);
       expect(isValidModel("claude-opus-4-6")).toBe(true);
       expect(isValidModel("claude-opus-4-7")).toBe(true);
@@ -53,6 +51,19 @@ describe("model utilities", () => {
       expect(isValidModel("gpt-5.3-codex-spark")).toBe(true);
     });
 
+    it("returns true for OpenCode Zen models", () => {
+      expect(isValidModel("opencode/kimi-k2.5")).toBe(true);
+      expect(isValidModel("opencode/minimax-m2.5")).toBe(true);
+      expect(isValidModel("opencode/glm-5")).toBe(true);
+    });
+
+    it("returns false for removed models", () => {
+      expect(isValidModel("anthropic/claude-haiku-4-5")).toBe(false);
+      expect(isValidModel("anthropic/claude-sonnet-4-5")).toBe(false);
+      expect(isValidModel("claude-haiku-4-5")).toBe(false);
+      expect(isValidModel("claude-sonnet-4-5")).toBe(false);
+    });
+
     it("returns false for invalid models", () => {
       expect(isValidModel("gpt-4")).toBe(false);
       expect(isValidModel("claude-3-opus")).toBe(false);
@@ -62,8 +73,8 @@ describe("model utilities", () => {
     });
 
     it("is case-sensitive", () => {
-      expect(isValidModel("Claude-Haiku-4-5")).toBe(false);
-      expect(isValidModel("CLAUDE-HAIKU-4-5")).toBe(false);
+      expect(isValidModel("Claude-Sonnet-4-6")).toBe(false);
+      expect(isValidModel("CLAUDE-SONNET-4-6")).toBe(false);
     });
 
     it("handles legacy model names", () => {
@@ -92,12 +103,12 @@ describe("model utilities", () => {
       });
     });
 
-    it("defaults to anthropic for models without slash", () => {
-      const result = extractProviderAndModel("claude-haiku-4-5");
+    it("defaults to anthropic for Claude models without slash", () => {
+      const result = extractProviderAndModel("claude-sonnet-4-6");
 
       expect(result).toEqual({
         provider: "anthropic",
-        model: "claude-haiku-4-5",
+        model: "claude-sonnet-4-6",
       });
     });
 
@@ -134,14 +145,9 @@ describe("model utilities", () => {
     });
 
     it("handles all valid model formats", () => {
-      expect(extractProviderAndModel("anthropic/claude-haiku-4-5")).toEqual({
+      expect(extractProviderAndModel("anthropic/claude-sonnet-4-6")).toEqual({
         provider: "anthropic",
-        model: "claude-haiku-4-5",
-      });
-
-      expect(extractProviderAndModel("anthropic/claude-sonnet-4-5")).toEqual({
-        provider: "anthropic",
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-6",
       });
 
       expect(extractProviderAndModel("anthropic/claude-opus-4-5")).toEqual({
@@ -161,14 +167,9 @@ describe("model utilities", () => {
     });
 
     it("normalizes bare Claude models before extraction", () => {
-      expect(extractProviderAndModel("claude-haiku-4-5")).toEqual({
+      expect(extractProviderAndModel("claude-sonnet-4-6")).toEqual({
         provider: "anthropic",
-        model: "claude-haiku-4-5",
-      });
-
-      expect(extractProviderAndModel("claude-sonnet-4-5")).toEqual({
-        provider: "anthropic",
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-6",
       });
 
       expect(extractProviderAndModel("claude-opus-4-5")).toEqual({
@@ -210,11 +211,8 @@ describe("model utilities", () => {
 
   describe("getValidModelOrDefault", () => {
     it("returns the model if valid", () => {
-      expect(getValidModelOrDefault("anthropic/claude-haiku-4-5")).toBe(
-        "anthropic/claude-haiku-4-5"
-      );
-      expect(getValidModelOrDefault("anthropic/claude-sonnet-4-5")).toBe(
-        "anthropic/claude-sonnet-4-5"
+      expect(getValidModelOrDefault("anthropic/claude-sonnet-4-6")).toBe(
+        "anthropic/claude-sonnet-4-6"
       );
       expect(getValidModelOrDefault("anthropic/claude-opus-4-5")).toBe("anthropic/claude-opus-4-5");
       expect(getValidModelOrDefault("anthropic/claude-opus-4-6")).toBe("anthropic/claude-opus-4-6");
@@ -222,8 +220,7 @@ describe("model utilities", () => {
     });
 
     it("normalizes bare Claude model names to prefixed format", () => {
-      expect(getValidModelOrDefault("claude-haiku-4-5")).toBe("anthropic/claude-haiku-4-5");
-      expect(getValidModelOrDefault("claude-sonnet-4-5")).toBe("anthropic/claude-sonnet-4-5");
+      expect(getValidModelOrDefault("claude-sonnet-4-6")).toBe("anthropic/claude-sonnet-4-6");
       expect(getValidModelOrDefault("claude-opus-4-5")).toBe("anthropic/claude-opus-4-5");
       expect(getValidModelOrDefault("claude-opus-4-6")).toBe("anthropic/claude-opus-4-6");
       expect(getValidModelOrDefault("claude-opus-4-7")).toBe("anthropic/claude-opus-4-7");
@@ -241,6 +238,11 @@ describe("model utilities", () => {
       expect(getValidModelOrDefault("gpt-4")).toBe(DEFAULT_MODEL);
     });
 
+    it("returns default for removed models", () => {
+      expect(getValidModelOrDefault("anthropic/claude-haiku-4-5")).toBe(DEFAULT_MODEL);
+      expect(getValidModelOrDefault("anthropic/claude-sonnet-4-5")).toBe(DEFAULT_MODEL);
+    });
+
     it("returns default for undefined", () => {
       expect(getValidModelOrDefault(undefined)).toBe(DEFAULT_MODEL);
     });
@@ -256,16 +258,14 @@ describe("model utilities", () => {
 
   describe("supportsReasoning", () => {
     it("returns true for Claude models with reasoning config", () => {
-      expect(supportsReasoning("anthropic/claude-haiku-4-5")).toBe(true);
-      expect(supportsReasoning("anthropic/claude-sonnet-4-5")).toBe(true);
+      expect(supportsReasoning("anthropic/claude-sonnet-4-6")).toBe(true);
       expect(supportsReasoning("anthropic/claude-opus-4-5")).toBe(true);
       expect(supportsReasoning("anthropic/claude-opus-4-6")).toBe(true);
       expect(supportsReasoning("anthropic/claude-opus-4-7")).toBe(true);
     });
 
     it("supports bare Claude model names via normalization", () => {
-      expect(supportsReasoning("claude-haiku-4-5")).toBe(true);
-      expect(supportsReasoning("claude-sonnet-4-5")).toBe(true);
+      expect(supportsReasoning("claude-sonnet-4-6")).toBe(true);
       expect(supportsReasoning("claude-opus-4-5")).toBe(true);
       expect(supportsReasoning("claude-opus-4-6")).toBe(true);
       expect(supportsReasoning("claude-opus-4-7")).toBe(true);
@@ -289,16 +289,14 @@ describe("model utilities", () => {
 
   describe("getDefaultReasoningEffort", () => {
     it("returns expected defaults for Claude models", () => {
-      expect(getDefaultReasoningEffort("anthropic/claude-haiku-4-5")).toBe("max");
-      expect(getDefaultReasoningEffort("anthropic/claude-sonnet-4-5")).toBe("max");
+      expect(getDefaultReasoningEffort("anthropic/claude-sonnet-4-6")).toBe("high");
       expect(getDefaultReasoningEffort("anthropic/claude-opus-4-5")).toBe("max");
       expect(getDefaultReasoningEffort("anthropic/claude-opus-4-6")).toBe("high");
       expect(getDefaultReasoningEffort("anthropic/claude-opus-4-7")).toBe("high");
     });
 
     it("returns expected defaults for bare Claude model names via normalization", () => {
-      expect(getDefaultReasoningEffort("claude-haiku-4-5")).toBe("max");
-      expect(getDefaultReasoningEffort("claude-sonnet-4-5")).toBe("max");
+      expect(getDefaultReasoningEffort("claude-sonnet-4-6")).toBe("high");
       expect(getDefaultReasoningEffort("claude-opus-4-5")).toBe("max");
       expect(getDefaultReasoningEffort("claude-opus-4-6")).toBe("high");
       expect(getDefaultReasoningEffort("claude-opus-4-7")).toBe("high");
@@ -323,13 +321,23 @@ describe("model utilities", () => {
   });
 
   describe("getReasoningConfig", () => {
-    it("returns config for Claude models", () => {
-      const config = getReasoningConfig("anthropic/claude-sonnet-4-5");
+    it("returns config for Claude Sonnet 4.6", () => {
+      const config = getReasoningConfig("anthropic/claude-sonnet-4-6");
+      expect(config).toEqual({
+        efforts: ["low", "medium", "high", "max"],
+        default: "high",
+      });
+    });
+
+    it("returns config for Claude Opus 4.5", () => {
+      const config = getReasoningConfig("anthropic/claude-opus-4-5");
       expect(config).toEqual({
         efforts: ["high", "max"],
         default: "max",
       });
+    });
 
+    it("returns config for Claude Opus 4.6 and 4.7", () => {
       const opus46Config = getReasoningConfig("anthropic/claude-opus-4-6");
       expect(opus46Config).toEqual({
         efforts: ["low", "medium", "high", "max"],
@@ -344,10 +352,10 @@ describe("model utilities", () => {
     });
 
     it("returns config for bare Claude model names via normalization", () => {
-      const config = getReasoningConfig("claude-sonnet-4-5");
+      const config = getReasoningConfig("claude-sonnet-4-6");
       expect(config).toEqual({
-        efforts: ["high", "max"],
-        default: "max",
+        efforts: ["low", "medium", "high", "max"],
+        default: "high",
       });
     });
 
@@ -389,16 +397,23 @@ describe("model utilities", () => {
   });
 
   describe("isValidReasoningEffort", () => {
-    it("returns true for valid effort on Claude models", () => {
-      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-5", "high")).toBe(true);
-      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-5", "max")).toBe(true);
+    it("returns true for valid effort on Claude Sonnet 4.6", () => {
+      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-6", "low")).toBe(true);
+      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-6", "medium")).toBe(true);
+      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-6", "high")).toBe(true);
+      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-6", "max")).toBe(true);
     });
 
-    it("returns false for invalid effort on Claude models", () => {
-      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-5", "low")).toBe(false);
-      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-5", "medium")).toBe(false);
-      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-5", "xhigh")).toBe(false);
-      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-5", "none")).toBe(false);
+    it("returns false for invalid effort on Claude Sonnet 4.6", () => {
+      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-6", "xhigh")).toBe(false);
+      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-6", "none")).toBe(false);
+    });
+
+    it("supports effort levels for Opus 4.5", () => {
+      expect(isValidReasoningEffort("anthropic/claude-opus-4-5", "high")).toBe(true);
+      expect(isValidReasoningEffort("anthropic/claude-opus-4-5", "max")).toBe(true);
+      expect(isValidReasoningEffort("anthropic/claude-opus-4-5", "low")).toBe(false);
+      expect(isValidReasoningEffort("anthropic/claude-opus-4-5", "medium")).toBe(false);
     });
 
     it("supports adaptive effort levels for Opus 4.6", () => {
@@ -418,9 +433,10 @@ describe("model utilities", () => {
     });
 
     it("accepts bare Claude model names via normalization", () => {
-      expect(isValidReasoningEffort("claude-sonnet-4-5", "high")).toBe(true);
-      expect(isValidReasoningEffort("claude-sonnet-4-5", "max")).toBe(true);
-      expect(isValidReasoningEffort("claude-sonnet-4-5", "low")).toBe(false);
+      expect(isValidReasoningEffort("claude-sonnet-4-6", "high")).toBe(true);
+      expect(isValidReasoningEffort("claude-sonnet-4-6", "max")).toBe(true);
+      expect(isValidReasoningEffort("claude-sonnet-4-6", "low")).toBe(true);
+      expect(isValidReasoningEffort("claude-sonnet-4-6", "xhigh")).toBe(false);
     });
 
     it("returns true for valid effort on OpenAI codex models", () => {
@@ -452,22 +468,20 @@ describe("model utilities", () => {
     });
 
     it("returns false for empty effort", () => {
-      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-5", "")).toBe(false);
+      expect(isValidReasoningEffort("anthropic/claude-sonnet-4-6", "")).toBe(false);
     });
   });
 
   describe("normalizeModelId", () => {
     it("adds anthropic/ prefix to bare Claude models", () => {
-      expect(normalizeModelId("claude-haiku-4-5")).toBe("anthropic/claude-haiku-4-5");
-      expect(normalizeModelId("claude-sonnet-4-5")).toBe("anthropic/claude-sonnet-4-5");
+      expect(normalizeModelId("claude-sonnet-4-6")).toBe("anthropic/claude-sonnet-4-6");
       expect(normalizeModelId("claude-opus-4-5")).toBe("anthropic/claude-opus-4-5");
       expect(normalizeModelId("claude-opus-4-6")).toBe("anthropic/claude-opus-4-6");
       expect(normalizeModelId("claude-opus-4-7")).toBe("anthropic/claude-opus-4-7");
     });
 
     it("passes through already-prefixed models unchanged", () => {
-      expect(normalizeModelId("anthropic/claude-haiku-4-5")).toBe("anthropic/claude-haiku-4-5");
-      expect(normalizeModelId("anthropic/claude-sonnet-4-5")).toBe("anthropic/claude-sonnet-4-5");
+      expect(normalizeModelId("anthropic/claude-sonnet-4-6")).toBe("anthropic/claude-sonnet-4-6");
       expect(normalizeModelId("anthropic/claude-opus-4-5")).toBe("anthropic/claude-opus-4-5");
       expect(normalizeModelId("anthropic/claude-opus-4-6")).toBe("anthropic/claude-opus-4-6");
       expect(normalizeModelId("anthropic/claude-opus-4-7")).toBe("anthropic/claude-opus-4-7");
