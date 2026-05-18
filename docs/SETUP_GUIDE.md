@@ -83,7 +83,7 @@ NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=your_generated_secret
 
 # Backend endpoints (deployed)
-CONTROL_PLANE_URL=https://open-inspect-control-plane-<name>.<subdomain>.workers.dev
+SERVER_URL=https://open-inspect-control-plane-<name>.<subdomain>.workers.dev
 NEXT_PUBLIC_WS_URL=wss://open-inspect-control-plane-<name>.<subdomain>.workers.dev
 
 # Must match control-plane INTERNAL_CALLBACK_SECRET
@@ -130,7 +130,7 @@ Open `http://localhost:3000`.
 
 If session actions fail, validate:
 
-- `CONTROL_PLANE_URL`
+- `SERVER_URL`
 - `NEXT_PUBLIC_WS_URL`
 - `INTERNAL_CALLBACK_SECRET`
 

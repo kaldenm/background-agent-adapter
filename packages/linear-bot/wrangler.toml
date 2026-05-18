@@ -18,7 +18,7 @@ id = ""  # Fill in after creating: wrangler kv namespace create LINEAR_KV
 
 [vars]
 DEPLOYMENT_NAME = "dev"
-CONTROL_PLANE_URL = "https://open-inspect-control-plane.YOUR-SUBDOMAIN.workers.dev"
+SERVER_URL = "https://open-inspect-control-plane.YOUR-SUBDOMAIN.workers.dev"
 WEB_APP_URL = "https://open-inspect-dev.vercel.app"
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
 LINEAR_CLIENT_ID = ""  # From Linear OAuth Application

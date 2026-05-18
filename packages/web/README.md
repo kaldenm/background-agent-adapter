@@ -87,7 +87,7 @@ ALLOWED_EMAIL_DOMAINS=example.com,corp.io  # Comma-separated email domains
 UNSAFE_ALLOW_ALL_USERS=false               # Set true to explicitly allow all users when both lists are empty
 
 # Control Plane
-CONTROL_PLANE_URL=http://localhost:8787
+SERVER_URL=http://localhost:8787
 NEXT_PUBLIC_WS_URL=ws://localhost:8787
 ```
 
