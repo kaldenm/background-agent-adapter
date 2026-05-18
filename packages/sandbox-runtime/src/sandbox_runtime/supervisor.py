@@ -73,7 +73,7 @@ class SandboxSupervisor:
 
         # Configuration from environment (set by Modal/SandboxManager)
         self.sandbox_id = os.environ.get("SANDBOX_ID", "unknown")
-        self.control_plane_url = os.environ.get("CONTROL_PLANE_URL", "")
+        self.server_url = os.environ.get("SERVER_URL", "")
         self.sandbox_token = os.environ.get("SANDBOX_AUTH_TOKEN", "")
         self.repo_owner = os.environ.get("REPO_OWNER", "")
         self.repo_name = os.environ.get("REPO_NAME", "")
@@ -457,8 +457,8 @@ class SandboxSupervisor:
         """Start the agent bridge process."""
         self.log.info("bridge.start")
 
-        if not self.control_plane_url:
-            self.log.info("bridge.skip", reason="no_control_plane_url")
+        if not self.server_url:
+            self.log.info("bridge.skip", reason="no_server_url")
             return
 
         # Wait for agent to be ready. For server agents this waits for the
@@ -490,8 +490,8 @@ class SandboxSupervisor:
             self.sandbox_id,
             "--session-id",
             session_id,
-            "--control-plane",
-            self.control_plane_url,
+            "--server-url",
+            self.server_url,
             "--token",
             self.sandbox_token,
             env=bridge_env,
@@ -530,158 +530,116 @@ class SandboxSupervisor:
         except Exception as e:
             print(f"[supervisor] Bridge log forwarding error: {e}")
 
+    async def _check_and_restart(
+        self,
+        name: str,
+        process: "asyncio.subprocess.Process | None",
+        restart_count: int,
+        restart_fn,
+        *,
+        fatal: bool = True,
+    ) -> tuple[int, bool]:
+        """Check if a process crashed and restart it with backoff.
+
+        Returns (new_restart_count, should_shutdown).
+        fatal=True means hitting MAX_RESTARTS triggers full shutdown.
+        fatal=False means we just give up on that process (sidecars).
+        """
+        if not process or process.returncode is None:
+            return restart_count, False
+
+        exit_code = process.returncode
+        restart_count += 1
+        log_fn = self.log.error if fatal else self.log.warn
+
+        log_fn(
+            f"{name}.crash",
+            exit_code=exit_code,
+            restart_count=restart_count,
+        )
+
+        if restart_count > self.MAX_RESTARTS:
+            log_fn(f"{name}.max_restarts", restart_count=restart_count)
+            if fatal:
+                await self._report_fatal_error(
+                    f"{name.replace('_', ' ').title()} crashed {restart_count} times, giving up"
+                )
+            return restart_count, fatal  # should_shutdown=True only for fatal
+
+        delay = min(self.BACKOFF_BASE**restart_count, self.BACKOFF_MAX)
+        self.log.info(f"{name}.restart", delay_s=round(delay, 1), restart_count=restart_count)
+        await asyncio.sleep(delay)
+
+        try:
+            await restart_fn()
+        except Exception as e:
+            self.log.warn(f"{name}.restart_failed", exc=e)
+            # For non-fatal processes, a failed restart is equivalent to giving up.
+            # Return count > MAX_RESTARTS so the caller can null the process ref.
+            if not fatal:
+                return self.MAX_RESTARTS + 1, False
+
+        return restart_count, False
+
     async def monitor_processes(self) -> None:
         """Monitor child processes and restart on crash."""
-        restart_count = 0
-        bridge_restart_count = 0
-        code_server_restart_count = 0
-        ttyd_restart_count = 0
-        ttyd_proxy_restart_count = 0
+        agent_restarts = 0
+        bridge_restarts = 0
+        code_server_restarts = 0
+        ttyd_restarts = 0
+        ttyd_proxy_restarts = 0
 
         while not self.shutdown_event.is_set():
-            # Check agent process. Returns None for subprocess agents where
-            # the bridge owns the process — crash monitoring happens there.
+            # Agent — returns None for subprocess agents (bridge owns the process)
             agent_process = self.adapter.get_process()
             if agent_process and agent_process.returncode is not None:
-                exit_code = agent_process.returncode
-                restart_count += 1
+                async def _restart_agent():
+                    self.agent_ready.clear()
+                    await self.start_agent()
 
-                self.log.error(
-                    "agent.crash",
-                    exit_code=exit_code,
-                    restart_count=restart_count,
-                    adapter=type(self.adapter).__name__,
+                agent_restarts, should_stop = await self._check_and_restart(
+                    "agent", agent_process, agent_restarts, _restart_agent, fatal=True,
                 )
-
-                if restart_count > self.MAX_RESTARTS:
-                    self.log.error(
-                        "agent.max_restarts",
-                        restart_count=restart_count,
-                    )
-                    await self._report_fatal_error(
-                        f"Agent crashed {restart_count} times, giving up"
-                    )
+                if should_stop:
                     self.shutdown_event.set()
                     break
 
-                # Exponential backoff
-                delay = min(self.BACKOFF_BASE**restart_count, self.BACKOFF_MAX)
-                self.log.info(
-                    "agent.restart",
-                    delay_s=round(delay, 1),
-                    restart_count=restart_count,
-                )
-
-                await asyncio.sleep(delay)
-                self.agent_ready.clear()
-                await self.start_agent()
-
-            # Check bridge process
+            # Bridge — exit code 0 is a graceful shutdown, don't restart
             if self.bridge_process and self.bridge_process.returncode is not None:
-                exit_code = self.bridge_process.returncode
-
-                if exit_code == 0:
-                    # Graceful exit: shutdown command, session terminated, or fatal
-                    # connection error. Propagate shutdown rather than restarting.
-                    self.log.info(
-                        "bridge.graceful_exit",
-                        exit_code=exit_code,
-                    )
+                if self.bridge_process.returncode == 0:
+                    self.log.info("bridge.graceful_exit", exit_code=0)
                     self.shutdown_event.set()
                     break
-                else:
-                    # Crash: restart with backoff and retry limit
-                    bridge_restart_count += 1
-                    self.log.error(
-                        "bridge.crash",
-                        exit_code=exit_code,
-                        restart_count=bridge_restart_count,
-                    )
 
-                    if bridge_restart_count > self.MAX_RESTARTS:
-                        self.log.error(
-                            "bridge.max_restarts",
-                            restart_count=bridge_restart_count,
-                        )
-                        await self._report_fatal_error(
-                            f"Bridge crashed {bridge_restart_count} times, giving up"
-                        )
-                        self.shutdown_event.set()
-                        break
-
-                    delay = min(self.BACKOFF_BASE**bridge_restart_count, self.BACKOFF_MAX)
-                    self.log.info(
-                        "bridge.restart",
-                        delay_s=round(delay, 1),
-                        restart_count=bridge_restart_count,
-                    )
-                    await asyncio.sleep(delay)
-                    await self.start_bridge()
-
-            # Check code-server process (non-fatal, best-effort restart)
-            if self.code_server_process and self.code_server_process.returncode is not None:
-                code_server_restart_count += 1
-                self.log.warn(
-                    "code_server.crash",
-                    exit_code=self.code_server_process.returncode,
-                    restart_count=code_server_restart_count,
+                bridge_restarts, should_stop = await self._check_and_restart(
+                    "bridge", self.bridge_process, bridge_restarts,
+                    self.start_bridge, fatal=True,
                 )
+                if should_stop:
+                    self.shutdown_event.set()
+                    break
 
-                if code_server_restart_count <= self.MAX_RESTARTS:
-                    delay = min(self.BACKOFF_BASE**code_server_restart_count, self.BACKOFF_MAX)
-                    await asyncio.sleep(delay)
-                    try:
-                        await self.start_code_server()
-                    except Exception as e:
-                        self.log.warn("code_server.restart_failed", exc=e)
-                        self.code_server_process = None
-                else:
-                    self.log.warn(
-                        "code_server.max_restarts", restart_count=code_server_restart_count
-                    )
-                    self.code_server_process = None
+            # Sidecars — non-fatal, best-effort restart
+            code_server_restarts, _ = await self._check_and_restart(
+                "code_server", self.code_server_process, code_server_restarts,
+                self.start_code_server, fatal=False,
+            )
+            if code_server_restarts > self.MAX_RESTARTS:
+                self.code_server_process = None
 
-            # Check ttyd process (non-fatal, best-effort restart)
-            if self.ttyd_process and self.ttyd_process.returncode is not None:
-                ttyd_restart_count += 1
-                self.log.warn(
-                    "ttyd.crash",
-                    exit_code=self.ttyd_process.returncode,
-                    restart_count=ttyd_restart_count,
-                )
+            ttyd_restarts, _ = await self._check_and_restart(
+                "ttyd", self.ttyd_process, ttyd_restarts,
+                self.start_ttyd, fatal=False,
+            )
+            if ttyd_restarts > self.MAX_RESTARTS:
+                self.ttyd_process = None
 
-                if ttyd_restart_count <= self.MAX_RESTARTS:
-                    delay = min(self.BACKOFF_BASE**ttyd_restart_count, self.BACKOFF_MAX)
-                    await asyncio.sleep(delay)
-                    try:
-                        await self.start_ttyd()
-                    except Exception as e:
-                        self.log.warn("ttyd.restart_failed", exc=e)
-                        self.ttyd_process = None
-                else:
-                    self.log.warn("ttyd.max_restarts", restart_count=ttyd_restart_count)
-                    self.ttyd_process = None
-
-            # Check ttyd proxy process (non-fatal, best-effort restart)
-            if self.ttyd_proxy_process and self.ttyd_proxy_process.returncode is not None:
-                ttyd_proxy_restart_count += 1
-                self.log.warn(
-                    "ttyd_proxy.crash",
-                    exit_code=self.ttyd_proxy_process.returncode,
-                    restart_count=ttyd_proxy_restart_count,
-                )
-
-                if ttyd_proxy_restart_count <= self.MAX_RESTARTS:
-                    delay = min(self.BACKOFF_BASE**ttyd_proxy_restart_count, self.BACKOFF_MAX)
-                    await asyncio.sleep(delay)
-                    try:
-                        await self.start_ttyd_proxy()
-                    except Exception as e:
-                        self.log.warn("ttyd_proxy.restart_failed", exc=e)
-                        self.ttyd_proxy_process = None
-                else:
-                    self.log.warn("ttyd_proxy.max_restarts", restart_count=ttyd_proxy_restart_count)
-                    self.ttyd_proxy_process = None
+            ttyd_proxy_restarts, _ = await self._check_and_restart(
+                "ttyd_proxy", self.ttyd_proxy_process, ttyd_proxy_restarts,
+                self.start_ttyd_proxy, fatal=False,
+            )
+            if ttyd_proxy_restarts > self.MAX_RESTARTS:
+                self.ttyd_proxy_process = None
 
             await asyncio.sleep(1.0)
 
@@ -689,13 +647,13 @@ class SandboxSupervisor:
         """Report a fatal error to the control plane."""
         self.log.error("supervisor.fatal", message=message)
 
-        if not self.control_plane_url:
+        if not self.server_url:
             return
 
         try:
             async with httpx.AsyncClient() as client:
                 await client.post(
-                    f"{self.control_plane_url}/sandbox/{self.sandbox_id}/error",
+                    f"{self.server_url}/sandbox/{self.sandbox_id}/error",
                     json={"error": message, "fatal": True},
                     headers={"Authorization": f"Bearer {self.sandbox_token}"},
                     timeout=5.0,
@@ -843,6 +801,37 @@ class SandboxSupervisor:
             default_timeout_seconds=self.DEFAULT_START_TIMEOUT_SECONDS,
         )
 
+    def _detect_boot_mode(self) -> str:
+        """Detect boot mode from environment variables.
+
+        Returns one of: "build", "snapshot_restore", "repo_image", "fresh".
+        Also sets OPENINSPECT_BOOT_MODE for child processes and logs the mode.
+        """
+        image_build_mode = os.environ.get("IMAGE_BUILD_MODE") == "true"
+        restored_from_snapshot = os.environ.get("RESTORED_FROM_SNAPSHOT") == "true"
+        from_repo_image = os.environ.get("FROM_REPO_IMAGE") == "true"
+
+        if image_build_mode:
+            mode = "build"
+        elif restored_from_snapshot:
+            mode = "snapshot_restore"
+        elif from_repo_image:
+            mode = "repo_image"
+        else:
+            mode = "fresh"
+
+        os.environ["OPENINSPECT_BOOT_MODE"] = mode
+
+        if image_build_mode:
+            self.log.info("supervisor.image_build_mode")
+        elif restored_from_snapshot:
+            self.log.info("supervisor.restored_from_snapshot")
+        elif from_repo_image:
+            repo_image_sha = os.environ.get("REPO_IMAGE_SHA", "unknown")
+            self.log.info("supervisor.from_repo_image", build_sha=repo_image_sha)
+
+        return mode
+
     async def run(self) -> None:
         """Main supervisor loop."""
         startup_start = time.time()
@@ -853,30 +842,7 @@ class SandboxSupervisor:
             repo_name=self.repo_name,
         )
 
-        # Detect operating mode
-        image_build_mode = os.environ.get("IMAGE_BUILD_MODE") == "true"
-        restored_from_snapshot = os.environ.get("RESTORED_FROM_SNAPSHOT") == "true"
-        from_repo_image = os.environ.get("FROM_REPO_IMAGE") == "true"
-
-        if image_build_mode:
-            self.boot_mode = "build"
-        elif restored_from_snapshot:
-            self.boot_mode = "snapshot_restore"
-        elif from_repo_image:
-            self.boot_mode = "repo_image"
-        else:
-            self.boot_mode = "fresh"
-
-        # Expose boot mode to repo hooks and child processes.
-        os.environ["OPENINSPECT_BOOT_MODE"] = self.boot_mode
-
-        if image_build_mode:
-            self.log.info("supervisor.image_build_mode")
-        elif restored_from_snapshot:
-            self.log.info("supervisor.restored_from_snapshot")
-        elif from_repo_image:
-            repo_image_sha = os.environ.get("REPO_IMAGE_SHA", "unknown")
-            self.log.info("supervisor.from_repo_image", build_sha=repo_image_sha)
+        self.boot_mode = self._detect_boot_mode()
 
         # Set up signal handlers
         loop = asyncio.get_event_loop()
@@ -887,14 +853,14 @@ class SandboxSupervisor:
         agent_ready = False
         try:
             # Phase 1: Git sync
-            if restored_from_snapshot:
+            if self.boot_mode == "snapshot_restore":
                 await self._update_existing_repo()  # best-effort
                 git_sync_success = True
-            elif from_repo_image:
+            elif self.boot_mode == "repo_image":
                 git_sync_success = await self._update_existing_repo()
             else:
                 git_sync_success = await self.perform_git_sync()
-            if image_build_mode and git_sync_success:
+            if self.boot_mode == "build" and git_sync_success:
                 head_sha = await self._get_head_sha()
                 if head_sha:
                     self.log.info("git.sync_complete", head_sha=head_sha)
@@ -904,7 +870,7 @@ class SandboxSupervisor:
             setup_success: bool | None = None
             if self.boot_mode in ("fresh", "build"):
                 setup_success = await self.run_setup_script()
-                if image_build_mode and not setup_success:
+                if self.boot_mode == "build" and not setup_success:
                     raise RuntimeError("setup hook failed in build mode")
 
             # Phase 3: Run runtime start hook for all non-build boots.
@@ -919,7 +885,7 @@ class SandboxSupervisor:
             # Image build mode: signal completion then keep sandbox alive for
             # snapshot_filesystem(). MCP packages are not pre-installed during
             # builds — they are installed at first use via npx at session start.
-            if image_build_mode:
+            if self.boot_mode == "build":
                 duration_ms = int((time.time() - startup_start) * 1000)
                 self.log.info("image_build.complete", duration_ms=duration_ms)
                 await self.shutdown_event.wait()
@@ -959,8 +925,8 @@ class SandboxSupervisor:
                 repo_owner=self.repo_owner,
                 repo_name=self.repo_name,
                 boot_mode=self.boot_mode,
-                restored_from_snapshot=restored_from_snapshot,
-                from_repo_image=from_repo_image,
+                restored_from_snapshot=self.boot_mode == "snapshot_restore",
+                from_repo_image=self.boot_mode == "repo_image",
                 git_sync_success=git_sync_success,
                 setup_success=setup_success,
                 start_success=start_success,
@@ -985,10 +951,13 @@ class SandboxSupervisor:
         self.shutdown_event.set()
 
     async def shutdown(self) -> None:
-        """Graceful shutdown of all processes."""
+        """Graceful shutdown of all processes.
+
+        Reverse dependency order: bridge (needs agent) → sidecars → agent (needed by bridge).
+        """
         self.log.info("supervisor.shutdown_start")
 
-        # Terminate bridge first
+        # Terminate bridge first (it talks to the agent — stop it before killing the agent)
         if self.bridge_process and self.bridge_process.returncode is None:
             self.bridge_process.terminate()
             try:
