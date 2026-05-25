@@ -6,7 +6,7 @@ Pi runs in RPC mode as a subprocess communicating via JSONL over stdin/stdout.
 Unlike OpenCode (HTTP server + SSE), the bridge owns the Pi process directly.
 
 Architecture:
-- Entrypoint: install() writes .pi/ config, prepare() validates binary only
+- Supervisor: install() writes .pi/ config, prepare() validates binary only
 - Bridge: configure() spawns Pi subprocess, send_prompt() reads JSONL events
 """
 
@@ -64,7 +64,7 @@ class PiAdapter(AgentAdapter):
         self._pending_status: list[dict[str, Any]] = []
 
     # ─────────────────────────────────────────────────────────────────────
-    # Entrypoint process methods (agent lifecycle)
+    # Supervisor process methods (agent lifecycle)
     # ─────────────────────────────────────────────────────────────────────
 
     async def install(self, workdir: Path, session_config: dict) -> None:
@@ -85,6 +85,12 @@ class PiAdapter(AgentAdapter):
             "followUpMode": "one-at-a-time",
         }
         (pi_dir / "settings.json").write_text(json.dumps(settings, indent=2))
+
+        # Write OAuth auth.json if refresh token is available (Claude Code subscription)
+        self._setup_anthropic_oauth(pi_dir)
+
+        # Install cc-patch extension (required for Claude Code subscription billing)
+        self._install_cc_patch_extension(workdir)
 
         # Install skills (same SKILL.md format as OpenCode)
         self._install_skills(workdir)
@@ -274,7 +280,14 @@ class PiAdapter(AgentAdapter):
             return
 
         # Stream events until agent_end
+        # Accumulate text deltas into cumulative content because the web UI
+        # deduplicates token events by messageId and keeps the latest.
+        # TODO: move this normalization to the web UI, then remove this.
+        cumulative_text = ""
         async for event in self._read_agent_events(message_id):
+            if event.get("type") == "token":
+                cumulative_text += event.get("content", "")
+                event = {**event, "content": cumulative_text}
             yield event
 
     async def stop(self, session_id: str) -> None:
@@ -352,6 +365,12 @@ class PiAdapter(AgentAdapter):
     async def _spawn_pi(self, session_path: str | None = None) -> None:
         """Spawn Pi subprocess in RPC mode."""
         cmd = ["pi", "--mode", "rpc", "--provider", self._provider, "--model", self._model]
+
+        # Load cc-patch extension if it was installed (Claude Code subscription)
+        cc_patch_path = self._workdir / ".pi" / "extensions" / "pi-cc-patch" / "index.ts" if self._workdir else None
+        if cc_patch_path and cc_patch_path.exists():
+            cmd.extend(["-e", str(cc_patch_path)])
+            self.log.info("pi.cc_patch_loaded")
 
         if session_path and Path(session_path).exists():
             cmd.extend(["--session", session_path, "-c"])
@@ -725,6 +744,70 @@ class PiAdapter(AgentAdapter):
             "max": "xhigh",
         }
         return mapping.get(effort, "medium")
+
+    def _install_cc_patch_extension(self, workdir: Path) -> None:
+        """Install the cc-patch extension so Claude Code subscription billing works.
+
+        Without this extension, Anthropic rejects OAuth requests from Pi
+        because it detects a third-party app using a Claude Code subscription.
+        The extension patches the API request to add the billing header and
+        sanitize trigger phrases.
+
+        The extension is copied to the project and loaded via Pi's -e flag
+        in _spawn_pi(), not via settings.json (which uses a different format
+        that crashes Pi's package manager).
+        """
+        refresh_token = os.environ.get("ANTHROPIC_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_OAUTH_REFRESH_TOKEN")
+        if not refresh_token:
+            return  # Only needed when using OAuth subscription
+
+        ext_source = Path("/app/sandbox_runtime/extensions/pi-cc-patch")
+        if not ext_source.exists():
+            self.log.warn("pi.cc_patch_not_found", path=str(ext_source))
+            return
+
+        # Copy extension to project .pi/extensions/
+        ext_dest = workdir / ".pi" / "extensions" / "pi-cc-patch"
+        ext_dest.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(ext_source, ext_dest, dirs_exist_ok=True)
+
+        self.log.info("pi.cc_patch_installed")
+
+    def _setup_anthropic_oauth(self, pi_dir: Path) -> None:
+        """Write Pi auth.json with Anthropic OAuth refresh token if available.
+
+        When ANTHROPIC_OAUTH_TOKEN is set (or the legacy ANTHROPIC_OAUTH_REFRESH_TOKEN),
+        Pi will use the Claude Code subscription instead of the ANTHROPIC_API_KEY.
+        Pi handles token refresh internally — it reads auth.json, detects the
+        expired access token, and uses the refresh token to get a new one.
+
+        Pi reads auth from ~/.pi/agent/auth.json (global), not the project
+        .pi/ directory. We write to both locations for safety.
+        """
+        refresh_token = os.environ.get("ANTHROPIC_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_OAUTH_REFRESH_TOKEN")
+        if not refresh_token:
+            return
+
+        auth_data = {
+            "anthropic": {
+                "type": "oauth",
+                "refresh": refresh_token,
+                "access": "",
+                "expires": 0,
+            }
+        }
+
+        auth_json = json.dumps(auth_data, indent=2)
+
+        # Write to global location (~/.pi/agent/auth.json) — where Pi reads auth
+        global_pi_dir = Path.home() / ".pi" / "agent"
+        global_pi_dir.mkdir(parents=True, exist_ok=True)
+        (global_pi_dir / "auth.json").write_text(auth_json)
+
+        # Also write to project .pi/ for consistency
+        (pi_dir / "auth.json").write_text(auth_json)
+
+        self.log.info("pi.anthropic_oauth_configured")
 
     def _install_skills(self, workdir: Path) -> None:
         """Copy bundled skills into .pi/agent/skills/ directory."""

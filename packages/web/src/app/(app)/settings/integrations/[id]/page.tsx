@@ -7,6 +7,7 @@ import { useSidebarContext } from "@/components/sidebar-layout";
 import { SidebarIcon, BackIcon } from "@/components/ui/icons";
 import { SHORTCUT_LABELS } from "@/lib/keyboard-shortcuts";
 import { useIsMobile } from "@/hooks/use-media-query";
+import { AnthropicIntegrationSettings } from "@/components/settings/integrations/anthropic-integration-settings";
 import { CodeServerIntegrationSettings } from "@/components/settings/integrations/code-server-integration-settings";
 import { GitHubIntegrationSettings } from "@/components/settings/integrations/github-integration-settings";
 import { LinearIntegrationSettings } from "@/components/settings/integrations/linear-integration-settings";
@@ -19,6 +20,7 @@ function IntegrationDetail({ integrationId }: { integrationId: IntegrationId }) 
   if (integrationId === "github") return <GitHubIntegrationSettings />;
   if (integrationId === "linear") return <LinearIntegrationSettings />;
   if (integrationId === "code-server") return <CodeServerIntegrationSettings />;
+  if (integrationId === "anthropic") return <AnthropicIntegrationSettings />;
   return null;
 }
 

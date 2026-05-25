@@ -1,6 +1,6 @@
 // Integration settings types
 
-export type IntegrationId = "github" | "linear" | "code-server" | "sandbox";
+export type IntegrationId = "github" | "linear" | "code-server" | "sandbox" | "anthropic";
 
 /** Enforces the common shape for all integration configurations. */
 export interface IntegrationEntry<TRepo extends object = Record<string, unknown>> {
@@ -36,6 +36,11 @@ export interface CodeServerSettings {
   enabled?: boolean;
 }
 
+/** Settings for the Anthropic OAuth integration (Claude Code subscription). */
+export interface AnthropicSettings {
+  connected?: boolean;
+}
+
 /** Maximum number of tunnel ports a user can configure per sandbox. */
 export const MAX_TUNNEL_PORTS = 10;
 
@@ -53,6 +58,7 @@ export interface IntegrationSettingsMap {
   linear: IntegrationEntry<LinearBotSettings>;
   "code-server": IntegrationEntry<CodeServerSettings>;
   sandbox: IntegrationEntry<SandboxSettings>;
+  anthropic: IntegrationEntry<AnthropicSettings>;
 }
 
 /** Derived type for the GitHub bot global config. */
@@ -60,6 +66,7 @@ export type GitHubGlobalConfig = IntegrationSettingsMap["github"]["global"];
 export type LinearGlobalConfig = IntegrationSettingsMap["linear"]["global"];
 export type CodeServerGlobalConfig = IntegrationSettingsMap["code-server"]["global"];
 export type SandboxGlobalConfig = IntegrationSettingsMap["sandbox"]["global"];
+export type AnthropicGlobalConfig = IntegrationSettingsMap["anthropic"]["global"];
 
 /** Full MCP server config with decrypted credentials. Internal use only. */
 export interface McpServerConfig {
@@ -111,5 +118,10 @@ export const INTEGRATION_DEFINITIONS: {
     id: "sandbox",
     name: "Sandbox",
     description: "Sandbox environment settings (tunnel ports, timeouts, etc.)",
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic (Claude Code)",
+    description: "Connect your Claude Code subscription for sandbox AI sessions",
   },
 ];

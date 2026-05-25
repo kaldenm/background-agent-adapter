@@ -28,6 +28,6 @@
     "DEPLOYMENT_NAME": "aldenmyers",
     "SANDBOX_PROVIDER": "daytona",
     "DAYTONA_API_URL": "https://app.daytona.io/api",
-    "DAYTONA_BASE_SNAPSHOT": "open-inspect-base-v3"
+    "DAYTONA_BASE_SNAPSHOT": "open-inspect-base-v10"
   }
 }
