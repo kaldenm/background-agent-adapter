@@ -7,10 +7,7 @@ import { serverFetch } from "@/lib/server";
 import { buildServerPath, SESSION_SERVER_QUERY_PARAMS } from "@/lib/server-query";
 
 export async function GET(request: NextRequest) {
-  const routeStart = Date.now();
-
   const session = await getServerSession(authOptions);
-  const authMs = Date.now() - routeStart;
 
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,15 +20,8 @@ export async function GET(request: NextRequest) {
   );
 
   try {
-    const fetchStart = Date.now();
     const response = await serverFetch(path);
-    const fetchMs = Date.now() - fetchStart;
     const data = await response.json();
-    const totalMs = Date.now() - routeStart;
-
-    console.log(
-      `[sessions:GET] total=${totalMs}ms auth=${authMs}ms fetch=${fetchMs}ms status=${response.status}`
-    );
 
     return NextResponse.json(data, { status: response.status });
   } catch (error) {

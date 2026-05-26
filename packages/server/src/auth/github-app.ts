@@ -10,6 +10,9 @@
  */
 
 import type { CacheStore, InstallationRepository } from "@open-inspect/shared";
+import { createLogger } from "../logger";
+
+const logger = createLogger("github-app");
 
 /** Timeout for individual GitHub API requests (ms). */
 export const GITHUB_FETCH_TIMEOUT_MS = 60_000;
@@ -374,6 +377,135 @@ export async function getCachedInstallationToken(
 
 // Re-export from shared for backward compatibility
 export type { InstallationRepository } from "@open-inspect/shared";
+
+/**
+ * GitHub API response for listing app installations.
+ */
+interface ListAppInstallationsResponse {
+  id: number;
+  account: {
+    login: string;
+    type: string; // "User" | "Organization"
+  };
+  target_type: string;
+}
+
+/**
+ * List all installations of this GitHub App.
+ * Uses the App JWT (not an installation token) to call GET /app/installations.
+ */
+export async function listAppInstallations(
+  appId: string,
+  privateKey: string
+): Promise<ListAppInstallationsResponse[]> {
+  const jwt = await generateAppJwt(appId, privateKey);
+  const headers = {
+    Authorization: `Bearer ${jwt}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "Open-Inspect",
+  };
+
+  const response = await fetchWithTimeout("https://api.github.com/app/installations?per_page=100", {
+    headers,
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw createHttpError(
+      `Failed to list app installations: ${response.status} ${body}`,
+      response.status
+    );
+  }
+
+  return (await response.json()) as ListAppInstallationsResponse[];
+}
+
+/**
+ * List repositories across ALL installations of the GitHub App.
+ * Discovers installations dynamically via GET /app/installations,
+ * then fetches repos for each concurrently and merges (deduped by repo id).
+ */
+export async function listAllInstallationsRepositories(
+  appId: string,
+  privateKey: string,
+  env?: InstallationTokenCacheBindings
+): Promise<{
+  repos: InstallationRepository[];
+  timing: ListReposTiming & { installationCount: number };
+}> {
+  const installations = await listAppInstallations(appId, privateKey);
+
+  logger.info("listAllInstallationsRepositories.found", {
+    installationCount: installations.length,
+    installations: installations.map((i) => `${i.account.login} (id=${i.id})`),
+  });
+
+  if (installations.length === 0) {
+    return {
+      repos: [],
+      timing: {
+        tokenGenerationMs: 0,
+        pages: [],
+        totalPages: 0,
+        totalRepos: 0,
+        installationCount: 0,
+      },
+    };
+  }
+
+  // Fetch repos for each installation concurrently
+  const results = await Promise.allSettled(
+    installations.map((installation) => {
+      logger.info("listAllInstallationsRepositories.fetching", {
+        account: installation.account.login,
+        installationId: installation.id,
+      });
+      const config: GitHubAppConfig = {
+        appId,
+        privateKey,
+        installationId: installation.id.toString(),
+      };
+      return listInstallationRepositories(config, env);
+    })
+  );
+
+  // Merge and dedupe by repo id
+  const seenIds = new Set<number>();
+  const allRepos: InstallationRepository[] = [];
+  const allPages: GitHubPageTiming[] = [];
+  let totalTokenMs = 0;
+  let totalPages = 0;
+
+  for (const result of results) {
+    if (result.status === "rejected") {
+      logger.error("listAllInstallationsRepositories.failed", { error: String(result.reason) });
+      continue;
+    }
+    logger.info("listAllInstallationsRepositories.repos", { count: result.value.repos.length });
+    totalTokenMs += result.value.timing.tokenGenerationMs;
+    totalPages += result.value.timing.totalPages;
+    allPages.push(...result.value.timing.pages);
+
+    for (const repo of result.value.repos) {
+      if (!seenIds.has(repo.id)) {
+        seenIds.add(repo.id);
+        allRepos.push(repo);
+      }
+    }
+  }
+
+  return {
+    repos: allRepos,
+    timing: {
+      tokenGenerationMs: Math.round(totalTokenMs * 100) / 100,
+      pages: allPages,
+      totalPages,
+      totalRepos: allRepos.length,
+      installationCount: installations.length,
+    },
+  };
+}
 
 /**
  * GitHub API response for installation repositories.

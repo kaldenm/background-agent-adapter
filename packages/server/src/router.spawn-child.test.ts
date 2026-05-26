@@ -44,11 +44,12 @@ describe("handleSpawnChild scheduler dispatch", () => {
     responseBody: Record<string, unknown> = { sessionId: "child-session-1", status: "created" },
     status = 201
   ) {
-    return vi.fn(async () =>
-      new Response(JSON.stringify(responseBody), {
-        status,
-        headers: { "Content-Type": "application/json" },
-      })
+    return vi.fn(
+      async () =>
+        new Response(JSON.stringify(responseBody), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        })
     );
   }
 

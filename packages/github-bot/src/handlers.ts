@@ -24,7 +24,8 @@ async function getAuthHeaders(env: Env, traceId: string): Promise<Record<string,
 }
 
 function stripMention(body: string, botUsername: string): string {
-  return body.replace(new RegExp(`@${botUsername}\\s*`, "gi"), "").trim();
+  const escaped = botUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return body.replace(new RegExp(`@${escaped}\\s*`, "gi"), "").trim();
 }
 
 // ─── Gating ────────────────────────────────────────────────────────────────
@@ -50,17 +51,45 @@ async function resolveCallerGating(
   traceId: string,
   repoFullName: string
 ): Promise<GatingResult> {
-  const ghToken = await generateInstallationToken(env);
-
-  if (config.requirePermissionCheck) {
-    const hasPermission = await checkSenderPermission(ghToken, owner, repoName, senderLogin);
-    if (!hasPermission) {
-      log.debug("handler.permission_denied", {
+  // Check explicit allowlist first (no token needed)
+  if (config.allowedTriggerUsers !== null) {
+    const allowed = config.allowedTriggerUsers.some(
+      (u) => u.toLowerCase() === senderLogin.toLowerCase()
+    );
+    if (!allowed) {
+      log.info("handler.sender_not_allowed", {
         trace_id: traceId,
         sender: senderLogin,
         repo: repoFullName,
       });
-      return { allowed: false, reason: "permission_denied" };
+      return { allowed: false, reason: "sender_not_allowed" };
+    }
+  }
+
+  const ghToken = await generateInstallationToken({
+    appId: env.GITHUB_APP_ID,
+    privateKey: env.GITHUB_APP_PRIVATE_KEY,
+    installationId: env.GITHUB_APP_INSTALLATION_ID,
+  });
+
+  // If no allowlist, fall back to GitHub repo permission check
+  if (config.allowedTriggerUsers === null) {
+    const permResult = await checkSenderPermission(ghToken, owner, repoName, senderLogin);
+    if (!permResult.hasPermission) {
+      if (permResult.error) {
+        log.info("handler.permission_check_failed", {
+          trace_id: traceId,
+          sender: senderLogin,
+          repo: repoFullName,
+        });
+        return { allowed: false, reason: "permission_check_failed" };
+      }
+      log.info("handler.sender_insufficient_permission", {
+        trace_id: traceId,
+        sender: senderLogin,
+        repo: repoFullName,
+      });
+      return { allowed: false, reason: "sender_insufficient_permission" };
     }
   }
 
@@ -74,7 +103,7 @@ function fireAndForgetReaction(
   url: string,
   meta: Record<string, unknown>
 ): void {
-  postReaction(ghToken, url).catch((e) => {
+  postReaction(ghToken, url, "eyes").catch((e) => {
     log.warn("reaction.failed", { ...meta, error: e instanceof Error ? e.message : String(e) });
   });
 }
@@ -95,12 +124,21 @@ export async function handleReviewRequested(
   const repoFullName = `${owner}/${repoName}`.toLowerCase();
 
   if (requested_reviewer?.login !== env.GITHUB_BOT_USERNAME) {
-    return { outcome: "skipped", skip_reason: "not_requested" };
+    log.debug("handler.review_not_for_bot", {
+      trace_id: traceId,
+      repo: repoFullName,
+      requested_reviewer: requested_reviewer?.login,
+    });
+    return { outcome: "skipped", skip_reason: "review_not_for_bot" };
   }
 
   const config = await getGitHubConfig(env, repoFullName, log);
 
   if (config.enabledRepos !== null && !config.enabledRepos.includes(repoFullName)) {
+    log.debug("handler.repo_not_enabled", {
+      trace_id: traceId,
+      repo: repoFullName,
+    });
     return { outcome: "skipped", skip_reason: "repo_not_enabled" };
   }
 
@@ -141,7 +179,7 @@ export async function handleReviewRequested(
       repoOwner: owner,
       repoName,
       userId: `github:${sender.id}`,
-      spawnSource: "github",
+      spawnSource: "github-bot",
       title: `GitHub: Review PR #${pr.number}`,
       model: config.model,
       reasoningEffort: config.reasoningEffort,
@@ -170,14 +208,38 @@ export async function handlePullRequestOpened(
   const repoName = repo.name;
   const repoFullName = `${owner}/${repoName}`.toLowerCase();
 
-  if (pr.draft) return { outcome: "skipped", skip_reason: "draft_pr" };
-  if (pr.user.login === env.GITHUB_BOT_USERNAME)
+  if (pr.draft) {
+    log.debug("handler.draft_pr_skipped", {
+      trace_id: traceId,
+      repo: repoFullName,
+      pull_number: pr.number,
+    });
+    return { outcome: "skipped", skip_reason: "draft_pr" };
+  }
+  if (pr.user.login === env.GITHUB_BOT_USERNAME) {
+    log.debug("handler.self_pr_ignored", {
+      trace_id: traceId,
+      repo: repoFullName,
+      pull_number: pr.number,
+    });
     return { outcome: "skipped", skip_reason: "self_pr" };
+  }
 
   const config = await getGitHubConfig(env, repoFullName, log);
-  if (config.enabledRepos !== null && !config.enabledRepos.includes(repoFullName))
+  if (config.enabledRepos !== null && !config.enabledRepos.includes(repoFullName)) {
+    log.debug("handler.repo_not_enabled", {
+      trace_id: traceId,
+      repo: repoFullName,
+    });
     return { outcome: "skipped", skip_reason: "repo_not_enabled" };
-  if (!config.autoReviewOnOpen) return { outcome: "skipped", skip_reason: "auto_review_disabled" };
+  }
+  if (!config.autoReviewOnOpen) {
+    log.debug("handler.auto_review_disabled", {
+      trace_id: traceId,
+      repo: repoFullName,
+    });
+    return { outcome: "skipped", skip_reason: "auto_review_disabled" };
+  }
 
   const gating = await resolveCallerGating(
     env,
@@ -216,7 +278,7 @@ export async function handlePullRequestOpened(
       repoOwner: owner,
       repoName,
       userId: `github:${sender.id}`,
-      spawnSource: "github",
+      spawnSource: "github-bot",
       title: `GitHub: Review PR #${pr.number}`,
       model: config.model,
       reasoningEffort: config.reasoningEffort,
@@ -245,15 +307,34 @@ export async function handleIssueComment(
   const repoName = repo.name;
   const repoFullName = `${owner}/${repoName}`.toLowerCase();
 
-  if (!issue.pull_request) return { outcome: "skipped", skip_reason: "not_a_pr" };
-  if (!comment.body.toLowerCase().includes(`@${env.GITHUB_BOT_USERNAME.toLowerCase()}`))
+  if (!issue.pull_request) {
+    log.debug("handler.not_a_pr", {
+      trace_id: traceId,
+      repo: repoFullName,
+      issue_number: issue.number,
+    });
+    return { outcome: "skipped", skip_reason: "not_a_pr" };
+  }
+  if (!comment.body.toLowerCase().includes(`@${env.GITHUB_BOT_USERNAME.toLowerCase()}`)) {
     return { outcome: "skipped", skip_reason: "no_mention" };
-  if (sender.login === env.GITHUB_BOT_USERNAME)
+  }
+  if (sender.login === env.GITHUB_BOT_USERNAME) {
+    log.debug("handler.self_comment_ignored", {
+      trace_id: traceId,
+      repo: repoFullName,
+      issue_number: issue.number,
+    });
     return { outcome: "skipped", skip_reason: "self_comment" };
+  }
 
   const config = await getGitHubConfig(env, repoFullName, log);
-  if (config.enabledRepos !== null && !config.enabledRepos.includes(repoFullName))
+  if (config.enabledRepos !== null && !config.enabledRepos.includes(repoFullName)) {
+    log.debug("handler.repo_not_enabled", {
+      trace_id: traceId,
+      repo: repoFullName,
+    });
     return { outcome: "skipped", skip_reason: "repo_not_enabled" };
+  }
 
   const gating = await resolveCallerGating(
     env,
@@ -292,7 +373,7 @@ export async function handleIssueComment(
       repoOwner: owner,
       repoName,
       userId: `github:${sender.id}`,
-      spawnSource: "github",
+      spawnSource: "github-bot",
       title: `GitHub: PR #${issue.number} comment`,
       model: config.model,
       reasoningEffort: config.reasoningEffort,
@@ -327,8 +408,13 @@ export async function handleReviewComment(
     return { outcome: "skipped", skip_reason: "self_comment" };
 
   const config = await getGitHubConfig(env, repoFullName, log);
-  if (config.enabledRepos !== null && !config.enabledRepos.includes(repoFullName))
+  if (config.enabledRepos !== null && !config.enabledRepos.includes(repoFullName)) {
+    log.debug("handler.repo_not_enabled", {
+      trace_id: traceId,
+      repo: repoFullName,
+    });
     return { outcome: "skipped", skip_reason: "repo_not_enabled" };
+  }
 
   const gating = await resolveCallerGating(
     env,
@@ -372,7 +458,7 @@ export async function handleReviewComment(
       repoOwner: owner,
       repoName,
       userId: `github:${sender.id}`,
-      spawnSource: "github",
+      spawnSource: "github-bot",
       title: `GitHub: PR #${pr.number} review comment`,
       model: config.model,
       reasoningEffort: config.reasoningEffort,

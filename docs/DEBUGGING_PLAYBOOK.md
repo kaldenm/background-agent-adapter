@@ -76,6 +76,38 @@ Wide events use `outcome` to indicate result:
 
 ---
 
+## Debugging Tools
+
+The query patterns below are meant to be run with these tools:
+
+### Cloudflare Workers logs (server, bots)
+
+```bash
+# Requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID env vars
+bun scripts/cf-logs.ts --session <session-id>
+bun scripts/cf-logs.ts --session abc123 --level error
+bun scripts/cf-logs.ts --session abc123 --search "sandbox"
+bun scripts/cf-logs.ts --session abc123 --json | pbcopy   # copy for LLM debugging
+```
+
+Alternatively, use the [Cloudflare dashboard](https://dash.cloudflare.com/) → Workers & Pages → your
+worker → Logs tab for live tailing.
+
+### Modal logs (sandbox infrastructure)
+
+```bash
+modal app logs open-inspect              # tail all sandbox logs
+modal app logs open-inspect --filter session_id=<id>  # filter by session
+```
+
+### Sandbox logs (supervisor, bridge, agent)
+
+Sandbox processes write to stdout/stderr inside the VM. If the sandbox is still running, use the
+terminal panel in the web UI or connect via code-server. For historical logs, check the Modal logs
+above — supervisor and bridge output is captured there.
+
+---
+
 ## Event Catalog
 
 ### Control Plane (`service: "control-plane"`)

@@ -7,13 +7,14 @@ vi.mock("../../auth/github-app", () => ({
   getCachedInstallationToken: vi.fn(),
   getInstallationRepository: vi.fn(),
   listInstallationRepositories: vi.fn(),
+  listAllInstallationsRepositories: vi.fn(),
   fetchWithTimeout: vi.fn(),
 }));
 
-import { getInstallationRepository, listInstallationRepositories } from "../../auth/github-app";
+import { getInstallationRepository, listAllInstallationsRepositories } from "../../auth/github-app";
 
 const mockGetInstallationRepository = vi.mocked(getInstallationRepository);
-const mockListInstallationRepositories = vi.mocked(listInstallationRepositories);
+const mockListAllInstallationsRepositories = vi.mocked(listAllInstallationsRepositories);
 
 const fakeAppConfig = {
   appId: "123",
@@ -89,7 +90,7 @@ describe("GitHubSourceControlProvider", () => {
 
     it("classifies upstream 429 error as transient", async () => {
       const httpError = Object.assign(new Error("rate limited: 429"), { status: 429 });
-      mockListInstallationRepositories.mockRejectedValueOnce(httpError);
+      mockListAllInstallationsRepositories.mockRejectedValueOnce(httpError);
 
       const provider = new GitHubSourceControlProvider({ appConfig: fakeAppConfig });
       const err = await provider.listRepositories().catch((e: unknown) => e);
@@ -101,7 +102,7 @@ describe("GitHubSourceControlProvider", () => {
 
     it("classifies upstream 502 error as transient", async () => {
       const httpError = Object.assign(new Error("bad gateway: 502"), { status: 502 });
-      mockListInstallationRepositories.mockRejectedValueOnce(httpError);
+      mockListAllInstallationsRepositories.mockRejectedValueOnce(httpError);
 
       const provider = new GitHubSourceControlProvider({ appConfig: fakeAppConfig });
       const err = await provider.listRepositories().catch((e: unknown) => e);
@@ -113,7 +114,7 @@ describe("GitHubSourceControlProvider", () => {
 
     it("classifies upstream 401 error as permanent with httpStatus", async () => {
       const httpError = Object.assign(new Error("unauthorized: 401"), { status: 401 });
-      mockListInstallationRepositories.mockRejectedValueOnce(httpError);
+      mockListAllInstallationsRepositories.mockRejectedValueOnce(httpError);
 
       const provider = new GitHubSourceControlProvider({ appConfig: fakeAppConfig });
       const err = await provider.listRepositories().catch((e: unknown) => e);

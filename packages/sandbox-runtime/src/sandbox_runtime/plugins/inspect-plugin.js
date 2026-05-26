@@ -13,10 +13,7 @@ const execFileAsync = promisify(execFile);
 
 // Debug: Log that the tool was loaded
 console.log("[create-pull-request] Tool module loaded");
-console.log(
-  "[create-pull-request] SERVER_URL:",
-  process.env.SERVER_URL || "<not set>"
-);
+console.log("[create-pull-request] SERVER_URL:", process.env.SERVER_URL || "<not set>");
 console.log(
   "[create-pull-request] SANDBOX_AUTH_TOKEN:",
   process.env.SANDBOX_AUTH_TOKEN ? "<set>" : "<not set>"

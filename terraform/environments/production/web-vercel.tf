@@ -44,7 +44,7 @@ module "web_app" {
     },
     # Control Plane
     {
-      key       = "CONTROL_PLANE_URL"
+      key       = "SERVER_URL"
       value     = local.control_plane_url
       targets   = ["production", "preview"]
       sensitive = false

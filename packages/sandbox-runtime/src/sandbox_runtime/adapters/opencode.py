@@ -89,7 +89,7 @@ class SSEConnectionError(Exception):
 class OpenCodeAdapter(AgentAdapter):
     """OpenCode agent adapter.
 
-    Handles both lifecycle (entrypoint) and communication (bridge) for OpenCode.
+    Handles both lifecycle (supervisor) and communication (bridge) for OpenCode.
     """
 
     PORT = 4096
@@ -170,7 +170,7 @@ class OpenCodeAdapter(AgentAdapter):
         self._sse_inactivity_timeout: float = self.SSE_INACTIVITY_TIMEOUT
 
     # ─────────────────────────────────────────────────────────────────────
-    # Entrypoint process methods (agent lifecycle)
+    # Supervisor process methods (agent lifecycle)
     # ─────────────────────────────────────────────────────────────────────
 
     async def install(self, workdir: Path, session_config: dict) -> None:

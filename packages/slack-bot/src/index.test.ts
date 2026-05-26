@@ -83,7 +83,7 @@ function makeEnv(): Env {
           );
         }
 
-        return new Response(JSON.stringify({ enabledModels: ["anthropic/claude-haiku-4-5"] }), {
+        return new Response(JSON.stringify({ enabledModels: ["anthropic/claude-sonnet-4-6"] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -92,8 +92,8 @@ function makeEnv(): Env {
     DEPLOYMENT_NAME: "test",
     SERVER_URL: "https://control-plane.test",
     WEB_APP_URL: "https://app.test",
-    DEFAULT_MODEL: "anthropic/claude-haiku-4-5",
-    CLASSIFICATION_MODEL: "anthropic/claude-haiku-4-5",
+    DEFAULT_MODEL: "anthropic/claude-sonnet-4-6",
+    CLASSIFICATION_MODEL: "anthropic/claude-sonnet-4-6",
     SLACK_BOT_TOKEN: "xoxb-test",
     SLACK_SIGNING_SECRET: "signing-secret",
     ANTHROPIC_API_KEY: "test-key",
@@ -472,7 +472,7 @@ describe("POST /interactions", () => {
       "user_preferences:U123",
       JSON.stringify({
         userId: "U123",
-        model: "anthropic/claude-haiku-4-5",
+        model: "anthropic/claude-sonnet-4-6",
         reasoningEffort: "medium",
         branch: "global-branch",
         updatedAt: Date.now(),
@@ -507,7 +507,7 @@ describe("POST /interactions", () => {
           );
         }
 
-        if (url.endsWith("/sessions")) {
+        if (url.includes("/scheduler/dispatch")) {
           return new Response(JSON.stringify({ sessionId: "session-1", status: "running" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -521,7 +521,7 @@ describe("POST /interactions", () => {
           });
         }
 
-        return new Response(JSON.stringify({ enabledModels: ["anthropic/claude-haiku-4-5"] }), {
+        return new Response(JSON.stringify({ enabledModels: ["anthropic/claude-sonnet-4-6"] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -537,17 +537,17 @@ describe("POST /interactions", () => {
 
     await flushWaitUntil(ctx);
 
-    const sessionCall = (
+    const dispatchCall = (
       env.CONTROL_PLANE.fetch as unknown as { mock: { calls: unknown[][] } }
     ).mock.calls.find(([input]) => {
       const url = typeof input === "string" ? input : (input as URL).toString();
-      return url.endsWith("/sessions");
+      return url.includes("/scheduler/dispatch");
     });
 
-    expect(sessionCall).toBeTruthy();
-    const init = sessionCall?.[1] as RequestInit;
-    const body = JSON.parse(String(init.body)) as { branch?: string };
-    expect(body.branch).toBe("repo-branch");
+    expect(dispatchCall).toBeTruthy();
+    const init = dispatchCall?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as { session?: { branch?: string } };
+    expect(body.session?.branch).toBe("repo-branch");
 
     slackFetch.mockRestore();
   });
@@ -625,7 +625,7 @@ describe("POST /interactions", () => {
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
-        if (url.endsWith("/sessions")) {
+        if (url.includes("/scheduler/dispatch")) {
           return new Response(JSON.stringify({ sessionId: "session-1", status: "running" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -649,20 +649,18 @@ describe("POST /interactions", () => {
     expect(response.status).toBe(200);
     await flushWaitUntil(ctx);
 
-    const sessionCall = (
+    const dispatchCall = (
       env.CONTROL_PLANE.fetch as unknown as { mock: { calls: unknown[][] } }
     ).mock.calls.find(([input]) => {
       const url = typeof input === "string" ? input : (input as URL).toString();
-      return url.endsWith("/sessions");
+      return url.includes("/scheduler/dispatch");
     });
 
-    expect(sessionCall).toBeTruthy();
-    const init = sessionCall?.[1] as RequestInit;
-    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body.actorUserId).toBe("U123");
-    expect(body.actorDisplayName).toBe("Jane");
-    expect(body.actorEmail).toBe("jane@example.com");
-    expect(body.spawnSource).toBe("slack-bot");
+    expect(dispatchCall).toBeTruthy();
+    const init = dispatchCall?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as { session?: Record<string, unknown> };
+    expect(body.session?.userId).toBe("slack:U123");
+    expect(body.session?.spawnSource).toBe("slack-bot");
 
     slackFetch.mockRestore();
   });
@@ -729,7 +727,7 @@ describe("POST /interactions", () => {
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
-        if (url.endsWith("/sessions")) {
+        if (url.includes("/scheduler/dispatch")) {
           return new Response(JSON.stringify({ sessionId: "session-1", status: "running" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -753,20 +751,18 @@ describe("POST /interactions", () => {
     expect(response.status).toBe(200);
     await flushWaitUntil(ctx);
 
-    const sessionCall = (
+    const dispatchCall = (
       env.CONTROL_PLANE.fetch as unknown as { mock: { calls: unknown[][] } }
     ).mock.calls.find(([input]) => {
       const url = typeof input === "string" ? input : (input as URL).toString();
-      return url.endsWith("/sessions");
+      return url.includes("/scheduler/dispatch");
     });
 
-    expect(sessionCall).toBeTruthy();
-    const init = sessionCall?.[1] as RequestInit;
-    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body.actorUserId).toBe("U123");
-    expect(body.actorDisplayName).toBeUndefined();
-    expect(body.actorEmail).toBeUndefined();
-    expect(body.spawnSource).toBe("slack-bot");
+    expect(dispatchCall).toBeTruthy();
+    const init = dispatchCall?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as { session?: Record<string, unknown> };
+    expect(body.session?.userId).toBe("slack:U123");
+    expect(body.session?.spawnSource).toBe("slack-bot");
 
     slackFetch.mockRestore();
   });
@@ -856,7 +852,7 @@ describe("POST /interactions", () => {
           });
         }
 
-        return new Response(JSON.stringify({ enabledModels: ["anthropic/claude-haiku-4-5"] }), {
+        return new Response(JSON.stringify({ enabledModels: ["anthropic/claude-sonnet-4-6"] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });

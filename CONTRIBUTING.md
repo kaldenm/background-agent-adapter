@@ -72,8 +72,8 @@ npm run typecheck                        # tsc across all packages
 npm test                                 # all tests
 
 # Targeted tests
-npm test -w @open-inspect/control-plane
-npm run test:integration -w @open-inspect/control-plane
+npm test -w @open-inspect/server
+npm run test:integration -w @open-inspect/server
 npm test -w @open-inspect/web
 npm test -w @open-inspect/github-bot
 npm test -w @open-inspect/slack-bot

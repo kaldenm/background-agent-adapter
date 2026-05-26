@@ -13,8 +13,8 @@ It is organized by goal so you can pick the fastest path:
 ## Important Context
 
 Open-Inspect is designed for **single-tenant** use. Everyone in your deployment shares the same
-GitHub App installation scope. Read the security model in [README.md](../README.md) before
-production use.
+GitHub App installation scope. Read the security model in
+[README.md](../README.md#security-model-single-tenant-only) before production use.
 
 ## Prerequisites
 
@@ -32,7 +32,7 @@ Optional (needed for `modal-infra` development):
 
 Optional (needed for full deployment):
 
-- Terraform `1.6+`
+- Terraform `1.14+`
 - Wrangler CLI
 
 Quick check:
@@ -155,9 +155,9 @@ npm test
 ### Targeted test commands
 
 ```bash
-# Control plane
-npm test -w @open-inspect/control-plane
-npm run test:integration -w @open-inspect/control-plane
+# Server
+npm test -w @open-inspect/server
+npm run test:integration -w @open-inspect/server
 
 # Web
 npm test -w @open-inspect/web

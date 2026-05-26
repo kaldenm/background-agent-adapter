@@ -5,6 +5,8 @@
  * scheduler, which is the single source of truth for what runs.
  */
 
+import type { CallbackContext } from "./types";
+
 export interface SchedulerDispatchRequest {
   session: {
     repoOwner: string;
@@ -27,7 +29,7 @@ export interface SchedulerDispatchRequest {
     content: string;
     authorId: string;
     source?: string;
-    callbackContext?: Record<string, unknown>;
+    callbackContext?: CallbackContext;
   };
 }
 

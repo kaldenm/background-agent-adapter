@@ -23,6 +23,8 @@ export default tseslint.config(
       "packages/modal-infra/**/*.js",
       // Sandbox runtime JS/TS files run inside sandboxes (Node.js), not part of the TS project
       "packages/sandbox-runtime/**",
+      "**/.open-next/**",
+      "pi-information/**",
     ],
   },
 

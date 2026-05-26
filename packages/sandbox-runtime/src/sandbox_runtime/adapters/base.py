@@ -1,15 +1,15 @@
 """Base adapter interface for pluggable coding agents.
 
 Any coding agent that wants to work inside the Open-Inspect sandbox must
-implement this ABC - these 13 methods. The adapter is instantiated in TWO separate processes:
+implement this ABC (12 abstract methods + shutdown() which has a default). The adapter is instantiated in TWO separate processes:
 
-- **Entrypoint process** — calls install(), prepare(), get_process(), forward_logs(), shutdown()
+- **Supervisor process** — calls install(), prepare(), get_process(), shutdown()
 - **Bridge subprocess** — calls configure(), create_session(), send_prompt(), stop(),
   health_check(), load_session_id(), save_session_id(), get_session_id_for_snapshot()
 
 See the spec for details on the two-process architecture. They are two diff process because they need separate 
-crash ad restart flows. If ws drops, bridge can restart without killing the agent, if agent crashed, 
-don't need to kill the bridge bc that would mean loosing the streaming state and all the events, pe. 
+crash and restart flows. If ws drops, bridge can restart without killing the agent. If agent crashes,
+don't need to kill the bridge because that would mean losing the streaming state and all the events.
 """
 
 import asyncio
@@ -25,11 +25,11 @@ class AgentAdapter(ABC):
     """Implement this to plug any coding agent into Open-Inspect.
 
     This class gets instantiated in TWO separate processes:
-    - Entrypoint process: calls install() and prepare()
+    - Supervisor process: calls install() and prepare()
     - Bridge subprocess: calls create_session(), send_prompt(), stop()
     """
 
-    # --- Entrypoint process methods (agent lifecycle) ---
+    # --- Supervisor process methods (agent lifecycle) ---
 
     @abstractmethod
     async def install(self, workdir: Path, session_config: dict) -> None:

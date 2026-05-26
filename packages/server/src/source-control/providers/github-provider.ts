@@ -23,10 +23,12 @@ import { SourceControlProviderError } from "../errors";
 import {
   getCachedInstallationToken,
   getInstallationRepository,
-  listInstallationRepositories,
+  listAllInstallationsRepositories,
+  listAppInstallations,
   listRepositoryBranches,
   fetchWithTimeout,
 } from "../../auth/github-app";
+import type { GitHubAppConfig } from "../../auth/github-app";
 import type { GitHubProviderConfig } from "./types";
 import { USER_AGENT, GITHUB_API_BASE } from "./constants";
 
@@ -201,7 +203,48 @@ export class GitHubSourceControlProvider implements SourceControlProvider {
   }
 
   /**
-   * Check whether a repository is accessible to the GitHub App installation.
+   * Find the right installation config for a given repo by trying the default
+   * installation first, then falling back to all other installations.
+   */
+  private async findInstallationForRepo(
+    owner: string,
+    name: string
+  ): Promise<{
+    repo: InstallationRepository;
+    config: GitHubAppConfig;
+  } | null> {
+    if (!this.appConfig) return null;
+    const env = this.cacheStore ? { cacheStore: this.cacheStore } : undefined;
+
+    // Try the default installation first
+    const repo = await getInstallationRepository(this.appConfig, owner, name, env);
+    if (repo) {
+      return { repo, config: this.appConfig };
+    }
+
+    // Fall back: try all other installations
+    const installations = await listAppInstallations(
+      this.appConfig.appId,
+      this.appConfig.privateKey
+    );
+    for (const installation of installations) {
+      if (installation.id.toString() === this.appConfig.installationId) continue; // already tried
+      const altConfig: GitHubAppConfig = {
+        appId: this.appConfig.appId,
+        privateKey: this.appConfig.privateKey,
+        installationId: installation.id.toString(),
+      };
+      const altRepo = await getInstallationRepository(altConfig, owner, name, env);
+      if (altRepo) {
+        return { repo: altRepo, config: altConfig };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Check whether a repository is accessible to any GitHub App installation.
    */
   async checkRepositoryAccess(config: GetRepositoryConfig): Promise<RepositoryAccessResult | null> {
     if (!this.appConfig) {
@@ -212,20 +255,15 @@ export class GitHubSourceControlProvider implements SourceControlProvider {
     }
 
     try {
-      const repo = await getInstallationRepository(
-        this.appConfig,
-        config.owner,
-        config.name,
-        this.cacheStore ? { cacheStore: this.cacheStore } : undefined
-      );
-      if (!repo) {
+      const result = await this.findInstallationForRepo(config.owner, config.name);
+      if (!result) {
         return null;
       }
       return {
-        repoId: repo.id,
+        repoId: result.repo.id,
         repoOwner: config.owner.toLowerCase(),
         repoName: config.name.toLowerCase(),
-        defaultBranch: repo.defaultBranch,
+        defaultBranch: result.repo.defaultBranch,
       };
     } catch (error) {
       throw SourceControlProviderError.fromFetchError(
@@ -237,7 +275,7 @@ export class GitHubSourceControlProvider implements SourceControlProvider {
   }
 
   /**
-   * List all repositories accessible to the GitHub App installation.
+   * List all repositories accessible across ALL installations of the GitHub App.
    */
   async listRepositories(): Promise<InstallationRepository[]> {
     if (!this.appConfig) {
@@ -248,8 +286,9 @@ export class GitHubSourceControlProvider implements SourceControlProvider {
     }
 
     try {
-      const result = await listInstallationRepositories(
-        this.appConfig,
+      const result = await listAllInstallationsRepositories(
+        this.appConfig.appId,
+        this.appConfig.privateKey,
         this.cacheStore ? { cacheStore: this.cacheStore } : undefined
       );
       return result.repos;
@@ -263,7 +302,7 @@ export class GitHubSourceControlProvider implements SourceControlProvider {
   }
 
   /**
-   * List branches for a repository.
+   * List branches for a repository (tries all installations).
    */
   async listBranches(config: GetRepositoryConfig): Promise<{ name: string }[]> {
     if (!this.appConfig) {
@@ -274,8 +313,14 @@ export class GitHubSourceControlProvider implements SourceControlProvider {
     }
 
     try {
+      const result = await this.findInstallationForRepo(config.owner, config.name);
+      if (!result) {
+        throw new Error(
+          `Repository ${config.owner}/${config.name} not accessible to any installation`
+        );
+      }
       return await listRepositoryBranches(
-        this.appConfig,
+        result.config,
         config.owner,
         config.name,
         this.cacheStore ? { cacheStore: this.cacheStore } : undefined
@@ -291,8 +336,12 @@ export class GitHubSourceControlProvider implements SourceControlProvider {
 
   /**
    * Generate authentication for git push operations using GitHub App.
+   * Accepts optional owner/name to find the right installation token.
    */
-  async generatePushAuth(): Promise<GitPushAuthContext> {
+  async generatePushAuth(repoContext?: {
+    owner: string;
+    name: string;
+  }): Promise<GitPushAuthContext> {
     if (!this.appConfig) {
       throw new SourceControlProviderError(
         "GitHub App not configured - cannot generate push auth",
@@ -301,7 +350,14 @@ export class GitHubSourceControlProvider implements SourceControlProvider {
     }
 
     try {
-      const token = await getCachedInstallationToken(this.appConfig);
+      let config = this.appConfig;
+      if (repoContext) {
+        const result = await this.findInstallationForRepo(repoContext.owner, repoContext.name);
+        if (result) {
+          config = result.config;
+        }
+      }
+      const token = await getCachedInstallationToken(config);
       return {
         authType: "app",
         token,

@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 /**
  * Get a separate OAuth token for the sandbox.
- * 
+ *
  * This does the same thing as `pi /login` but instead of saving to
  * ~/.pi/agent/auth.json (which your laptop Pi uses), it just prints
  * the token so you can paste it into the web UI secrets page.
- * 
+ *
  * Usage: bun scripts/get-sandbox-token.ts
- * 
+ *
  * It opens your browser, you authorize, and it prints the refresh token.
  * Paste that into ANTHROPIC_OAUTH_TOKEN in the web UI.
  */
@@ -19,21 +19,26 @@ const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
 const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
 const PORT = 53693; // Different port from Pi's normal login (53692) so they don't conflict
 const REDIRECT_URI = `http://localhost:${PORT}/callback`;
-const SCOPES = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
+const SCOPES =
+  "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
 
 // PKCE challenge generation
 async function generatePKCE() {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
   const verifier = btoa(String.fromCharCode(...array))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
   const encoder = new TextEncoder();
   const data = encoder.encode(verifier);
   const hash = await crypto.subtle.digest("SHA-256", data);
   const challenge = btoa(String.fromCharCode(...new Uint8Array(hash)))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
   return { verifier, challenge };
 }
 
@@ -42,7 +47,7 @@ async function main() {
 
   // Start callback server
   const { promise, resolve } = Promise.withResolvers<{ code: string; state: string }>();
-  
+
   const server = createServer((req, res) => {
     const url = new URL(req.url || "", "http://localhost");
     if (url.pathname !== "/callback") {
@@ -81,12 +86,12 @@ async function main() {
   });
 
   const authUrl = `${AUTHORIZE_URL}?${params}`;
-  
+
   console.log("\n🔑 Opening browser to authorize a SEPARATE token for the sandbox...\n");
   console.log("If the browser doesn't open, go to:");
   console.log(authUrl);
   console.log();
-  
+
   // Open browser
   Bun.spawn(["open", authUrl]);
 
@@ -96,7 +101,7 @@ async function main() {
 
   // Exchange code for tokens
   console.log("Exchanging code for tokens...");
-  
+
   const response = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -116,10 +121,10 @@ async function main() {
     process.exit(1);
   }
 
-  const data = await response.json() as { 
-    access_token: string; 
-    refresh_token: string; 
-    expires_in: number 
+  const data = (await response.json()) as {
+    access_token: string;
+    refresh_token: string;
+    expires_in: number;
   };
 
   console.log("\n✅ Got a separate token for the sandbox!\n");

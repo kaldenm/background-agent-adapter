@@ -46,17 +46,14 @@ describe("session internal endpoint contracts", () => {
     // The router must use SessionInternalPaths constants for session DO calls,
     // not raw "/internal/..." URLs. The scheduler dispatch URL is an exception
     // (it targets the scheduler DO, not a session DO).
-    const sessionInternalUrlPattern = /stub\.fetch\(["']http:\/\/internal\/internal\//;
+    const _sessionInternalUrlPattern = /stub\.fetch\(["']http:\/\/internal\/internal\//;
     const routerWithoutSchedulerDispatch = routerSource.replace(
       /\/\/ Forward.*handleSchedulerDispatch[\s\S]*?^\}/m,
       ""
     );
     // Check no raw session-internal URLs outside the scheduler dispatch handler
     for (const line of routerWithoutSchedulerDispatch.split("\n")) {
-      if (
-        line.includes('"http://internal/internal/') &&
-        !line.includes("/internal/dispatch")
-      ) {
+      if (line.includes('"http://internal/internal/') && !line.includes("/internal/dispatch")) {
         expect.unreachable(
           `Raw session-internal URL found in router (use SessionInternalPaths instead): ${line.trim()}`
         );

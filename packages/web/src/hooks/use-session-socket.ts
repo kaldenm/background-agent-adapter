@@ -277,7 +277,6 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
     (data: WsMessage) => {
       switch (data.type) {
         case "subscribed": {
-          console.log("WebSocket subscribed to session");
           subscribedRef.current = true;
           // Replace local artifacts with the subscribed snapshot so reconnects
           // still clear stale state instead of merging stale client data.
@@ -513,18 +512,9 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
 
   const connect = useCallback(async () => {
     // Use ref to avoid race conditions with React StrictMode
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log("WebSocket already open");
-      return;
-    }
-    if (wsRef.current?.readyState === WebSocket.CONNECTING) {
-      console.log("WebSocket already connecting");
-      return;
-    }
-    if (connectingRef.current) {
-      console.log("Connection in progress (ref)");
-      return;
-    }
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
+    if (connectingRef.current) return;
 
     connectingRef.current = true;
     setConnecting(true);
@@ -542,7 +532,6 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
     }
 
     const wsUrl = `${WS_URL}/sessions/${sessionId}/ws`;
-    console.log("WebSocket connecting to:", wsUrl);
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -552,7 +541,6 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
         ws.close();
         return;
       }
-      console.log("WebSocket connected!");
       connectingRef.current = false;
       setConnected(true);
       setConnecting(false);
@@ -643,12 +631,6 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
       setTimeout(() => sendPrompt(content, model, reasoningEffort), 500);
       return;
     }
-
-    console.log("Sending prompt", {
-      contentLength: content.length,
-      model,
-      reasoningEffort,
-    });
 
     // Optimistically set isProcessing for immediate feedback
     // Server will confirm with processing_status message

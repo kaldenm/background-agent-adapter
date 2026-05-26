@@ -46,11 +46,12 @@ Create accounts on these services before continuing:
 | [Anthropic](https://console.anthropic.com)       | Claude API                                                     |
 | [Slack](https://api.slack.com/apps) _(optional)_ | Slack bot integration                                          |
 | GitHub App Webhooks _(optional)_                 | GitHub bot (PR reviews)                                        |
+| [Linear](https://linear.app) _(optional)_        | Linear bot (issue-driven coding sessions)                      |
 
 ### Required Tools
 
 ```bash
-# Terraform (1.9.0+)
+# Terraform (1.14.0+)
 brew install terraform
 
 # Node.js (22+)
@@ -67,13 +68,14 @@ npm install -g wrangler
 
 ## Step 1: Fork the Repository
 
-Fork [ColeMurray/background-agents](https://github.com/ColeMurray/background-agents) to your GitHub
-account or organization.
+Fork
+[Goober-Codes/background-agent-adapter](https://github.com/Goober-Codes/background-agent-adapter) to
+your GitHub account or organization.
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR-USERNAME/background-agents.git
-cd background-agents
+git clone https://github.com/YOUR-USERNAME/background-agent-adapter.git
+cd background-agent-adapter
 npm install
 
 # Build the shared package (required before Terraform deployment)
@@ -101,7 +103,7 @@ cd packages/modal-infra && uv sync --frozen && cd -
    of the panel for `*.YOUR-SUBDOMAIN.workers.dev`
 4. **Create API Token** at [API Tokens](https://dash.cloudflare.com/profile/api-tokens):
    - Use template: "Edit Cloudflare Workers"
-   - Add permissions: Workers KV Storage (Edit), Workers R2 Storage (Edit)
+   - Add permissions: Workers KV Storage (Edit), Workers R2 Storage (Edit), D1 (Edit)
 5. **Enable R2**: Must add payment info, but first 10 GB/month is free
 
 ### Cloudflare R2 (Terraform State Backend)
@@ -377,6 +379,12 @@ enable_github_bot      = false
 github_webhook_secret  = ""          # From Step 5 (required if enabled)
 github_bot_username    = ""          # e.g., "my-app[bot]" (your GitHub App's bot login)
 
+# Linear Bot (set enable_linear_bot = true to deploy the Linear agent worker)
+enable_linear_bot      = false
+linear_client_id       = ""
+linear_client_secret   = ""
+linear_webhook_secret  = ""
+
 # API Keys
 anthropic_api_key = "sk-ant-..."
 
@@ -430,7 +438,7 @@ enable_service_bindings        = false
 
 ```bash
 # From the repository root
-npm run build -w @open-inspect/control-plane -w @open-inspect/slack-bot -w @open-inspect/github-bot
+npm run build -w @open-inspect/server -w @open-inspect/slack-bot -w @open-inspect/github-bot -w @open-inspect/linear-bot
 ```
 
 Then run:
@@ -555,6 +563,48 @@ Or construct it from your App's slug: if your app is named `My-Inspect-App`, the
 
 ---
 
+## Step 7d: Complete Linear Bot Setup (If Using Linear Bot)
+
+Now that the Linear bot worker is deployed, connect it to your Linear workspace.
+
+### Create a Linear OAuth Application
+
+1. Go to
+   **[Linear Settings → API → Applications → New](https://linear.app/settings/api/applications/new)**
+2. Fill in:
+   - **Application name:** `OpenInspect` (this is how the bot appears in @mentions)
+   - **Developer name:** Your org name
+   - **Callback URL:**
+     `https://open-inspect-linear-bot-{deployment_name}.YOUR-SUBDOMAIN.workers.dev/oauth/callback`
+   - **Webhooks:** Enable, set URL to
+     `https://open-inspect-linear-bot-{deployment_name}.YOUR-SUBDOMAIN.workers.dev/webhook`
+   - **Webhook events:** Check **Agent session events**, **Issues**, **Comments**
+   - **Public:** OFF (unless distributing to other workspaces)
+3. Note the **Client ID**, **Client Secret**, and **Webhook Signing Secret**
+4. Ensure these match the `linear_client_id`, `linear_client_secret`, and `linear_webhook_secret`
+   values in your `terraform.tfvars`
+
+### Install the Agent in Your Workspace
+
+Visit `https://open-inspect-linear-bot-{deployment_name}.YOUR-SUBDOMAIN.workers.dev/oauth/authorize`
+in your browser. This initiates the OAuth flow and installs the agent in your Linear workspace.
+
+> **Requires admin permissions** in the Linear workspace.
+
+After installation, `@OpenInspect` will appear in the mention and assignee menus on Linear issues.
+
+### Usage
+
+- **@mention** the agent on any issue to start a coding session
+- **Assign** the agent to an issue for the same effect
+- Follow-up messages on an active issue go to the existing session as additional prompts
+- Stopping or cancelling the agent in Linear kills the sandbox session
+
+See [packages/linear-bot/README.md](../packages/linear-bot/README.md) for repo resolution
+configuration and advanced setup.
+
+---
+
 ## Step 8: Deploy the Web App
 
 ### If using Cloudflare (`web_platform = "cloudflare"`)
@@ -669,6 +719,10 @@ Go to your fork's Settings → Secrets and variables → Actions, and add:
 | `ENABLE_GITHUB_BOT`           | `true` to deploy GitHub bot worker (or empty to skip)                         |
 | `GH_WEBHOOK_SECRET`           | GitHub webhook secret (required if GitHub bot enabled)                        |
 | `GH_BOT_USERNAME`             | GitHub App bot username, e.g., `my-app[bot]` (required if GitHub bot enabled) |
+| `ENABLE_LINEAR_BOT`           | `true` to deploy Linear bot worker (or empty to skip)                         |
+| `LINEAR_CLIENT_ID`            | Linear OAuth app client ID (required if Linear bot enabled)                   |
+| `LINEAR_CLIENT_SECRET`        | Linear OAuth app client secret (required if Linear bot enabled)               |
+| `LINEAR_WEBHOOK_SECRET`       | Linear webhook signing secret (required if Linear bot enabled)                |
 
 **Bulk upload secrets with `gh` CLI:**
 
@@ -682,7 +736,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 Then upload all at once (run from your fork's directory, or use
-`-R {your_github_username}/{background-agents}`):
+`-R {your_github_username}/{background-agent-adapter}`):
 
 ```bash
 gh secret set -f .secrets
@@ -778,12 +832,13 @@ Terraform references the built worker bundles. Build them before running `terraf
 npm run build -w @open-inspect/shared
 
 # Build workers (required before Terraform)
-npm run build -w @open-inspect/control-plane -w @open-inspect/slack-bot -w @open-inspect/github-bot
+npm run build -w @open-inspect/server -w @open-inspect/slack-bot -w @open-inspect/github-bot -w @open-inspect/linear-bot
 
 # Verify bundles exist
-ls packages/control-plane/dist/index.js
+ls packages/server/dist/index.js
 ls packages/slack-bot/dist/index.js
-ls packages/github-bot/dist/index.js  # Only if enable_github_bot = true
+ls packages/github-bot/dist/index.js   # Only if enable_github_bot = true
+ls packages/linear-bot/dist/index.js   # Only if enable_linear_bot = true
 ```
 
 ### Slack bot not responding

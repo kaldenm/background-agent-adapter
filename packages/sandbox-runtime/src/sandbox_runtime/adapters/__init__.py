@@ -4,6 +4,8 @@ Usage:
     from sandbox_runtime.adapters import load_adapter
 
     adapter = load_adapter("opencode")
+
+See template.py for a starter skeleton when building a new adapter.
 """
 
 from .base import AgentAdapter

@@ -192,7 +192,7 @@ jobs:
         continue-on-error: true # Allow failures initially as types are added
 
   test-cp-unit:
-    name: Test (control-plane unit)
+    name: Test (server unit)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [lint-typescript, typecheck-typescript]
@@ -215,11 +215,11 @@ jobs:
       - name: Run shared tests
         run: npm test -w @open-inspect/shared
 
-      - name: Run control-plane unit tests
-        run: npm test -w @open-inspect/control-plane
+      - name: Run server unit tests
+        run: npm test -w @open-inspect/server
 
   test-cp-integration:
-    name: Test (control-plane integration)
+    name: Test (server integration)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [lint-typescript, typecheck-typescript]
@@ -242,8 +242,8 @@ jobs:
       - name: Install workerd runtime dependency
         run: sudo apt-get update && sudo apt-get install -y libc++1
 
-      - name: Run control-plane integration tests
-        run: npm run test:integration -w @open-inspect/control-plane
+      - name: Run server integration tests
+        run: npm run test:integration -w @open-inspect/server
 
   test-web:
     name: Test (web)

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Goober-Codes/background-agent-adapter/actions/workflows/ci.yml/badge.svg)](https://github.com/Goober-Codes/background-agent-adapter/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-22+-green.svg)](https://nodejs.org)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://python.org)
 
 **Plug any coding agent into a background agent system.**
@@ -27,11 +27,13 @@ for browser communication, and an agent-agnostic supervisor.
 git clone https://github.com/Goober-Codes/background-agent-adapter.git
 cd background-agent-adapter
 bash .openinspect/setup.sh          # installs deps, builds shared, sets up hooks
+npm test                             # verify everything works
 npm run dev -w @open-inspect/web     # start the web UI
 ```
 
-For full deployment (Cloudflare + sandbox provider), see
-[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+> This builds the project and starts the web UI dev server. To actually create sessions and run
+> agents, you'll need a configured backend — see the [Setup Guide](docs/SETUP_GUIDE.md) for local
+> development or [Getting Started](docs/GETTING_STARTED.md) for full deployment.
 
 ---
 
@@ -43,14 +45,15 @@ Scheduler → creates Session → spawns Sandbox → Supervisor boots
   → browsers connect to Session → events flow both ways
 ```
 
-Four primitives run the system:
+Five primitives run the system:
 
-| Primitive      | File(s)                                               | Role                                                                                           |
-| -------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| **Scheduler**  | `server/src/scheduler/scheduler.ts`                   | Manager of the server. Decides what runs. Single door for all session creation.                |
-| **Session**    | `server/src/session/session.ts` + `session-server.ts` | The conversation. Persistent object on Cloudflare. Owns state, connects agent to browsers.     |
-| **Supervisor** | `sandbox-runtime/src/sandbox_runtime/supervisor.py`   | Manager of the sandbox. Runs inside the VM. Starts and monitors agent, bridge, and sidecars.   |
-| **Adapter**    | `sandbox-runtime/src/sandbox_runtime/adapters/`       | The plug. Makes supervisor + bridge agent-agnostic. Swap agents by implementing one interface. |
+| Primitive      | File(s)                                                        | Role                                                                                           |
+| -------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Scheduler**  | `packages/server/src/scheduler/scheduler.ts`                   | Manager of the server. Decides what runs. Single door for all session creation.                |
+| **Session**    | `packages/server/src/session/session.ts` + `session-server.ts` | The conversation. Persistent object on Cloudflare. Owns state, connects agent to browsers.     |
+| **Supervisor** | `packages/sandbox-runtime/src/sandbox_runtime/supervisor.py`   | Manager of the sandbox. Runs inside the VM. Starts and monitors agent, bridge, and sidecars.   |
+| **Adapter**    | `packages/sandbox-runtime/src/sandbox_runtime/adapters/`       | The plug. Makes supervisor + bridge agent-agnostic. Swap agents by implementing one interface. |
+| **Bridge**     | `packages/sandbox-runtime/src/sandbox_runtime/bridge.py`       | WebSocket connection back to session. Streams events, handles git push, snapshots.             |
 
 ### The flow in detail
 
@@ -102,7 +105,7 @@ a 1,700-line bridge. This fork extracts a clean adapter interface:
    │   OpenCode    │     │       Pi        │
    │  HTTP server  │     │  subprocess     │
    │  (1,243 lines)│     │  stdin/stdout   │
-   │               │     │  (754 lines)    │
+   │               │     │  (846 lines)    │
    └───────────────┘     └─────────────────┘
 ```
 
@@ -114,14 +117,15 @@ a 1,700-line bridge. This fork extracts a clean adapter interface:
    [`adapters/__init__.py`](packages/sandbox-runtime/src/sandbox_runtime/adapters/__init__.py)
 3. Set `AGENT_ADAPTER=my_agent`
 
-See [docs/AGENT_ADAPTER.md](docs/AGENT_ADAPTER.md) for the full guide.
+See [docs/AGENT_ADAPTER.md](docs/AGENT_ADAPTER.md) for the full guide. Start from the
+[adapter template](packages/sandbox-runtime/src/sandbox_runtime/adapters/template.py).
 
 #### Two adapters included
 
-| Adapter      | Communication Model             | Lines | How it works                                                              |
-| ------------ | ------------------------------- | ----- | ------------------------------------------------------------------------- |
-| **OpenCode** | HTTP server on localhost        | 1,243 | Bridge makes HTTP requests, reads SSE streams. Agent runs independently.  |
-| **Pi**       | Subprocess (stdin/stdout pipes) | 754   | Bridge spawns the agent in `configure()`, writes JSON in, reads JSON out. |
+| Adapter                                                   | Communication Model             | Lines | How it works                                                                |
+| --------------------------------------------------------- | ------------------------------- | ----- | --------------------------------------------------------------------------- |
+| **OpenCode**                                              | HTTP server on localhost        | 1,243 | Bridge makes HTTP requests, reads SSE streams. Agent runs independently.    |
+| **[Pi](https://github.com/mariozechner/pi-coding-agent)** | Subprocess (stdin/stdout pipes) | 846   | Bridge spawns the agent in `configure()`, writes JSONL in, reads JSONL out. |
 
 ### 2. Scheduler Single Door
 
@@ -164,7 +168,8 @@ The entrypoint was renamed to `supervisor.py` and stripped of all agent-specific
 
 ## The Adapter Interface
 
-Every adapter implements 13 methods, split across two processes:
+Every adapter implements 13 methods (12 abstract + `shutdown()` with a default), split across two
+processes:
 
 **Supervisor process** (agent lifecycle):
 
@@ -259,8 +264,7 @@ Everything below comes from the upstream
 | [linear-bot](packages/linear-bot)           | Linear integration                                                          |
 | [shared](packages/shared)                   | Shared types, utilities, and `dispatchToScheduler()` client                 |
 
-<details>
-<summary><strong>Security Model (single-tenant only)</strong></summary>
+## Security Model (Single-Tenant Only)
 
 This system is designed for **single-tenant deployment only**, where all users are trusted members
 of the same organization.
@@ -284,9 +288,9 @@ of the same organization.
 2. Install the GitHub App only on intended repositories
 3. Use GitHub's repository selection — specific repos, not "All repositories"
 
-</details>
-
 ## Documentation
+
+For a suggested reading order, see [docs/README.md](docs/README.md).
 
 | Doc                                                 | Description                       |
 | --------------------------------------------------- | --------------------------------- |
@@ -297,6 +301,9 @@ of the same organization.
 | [AUTOMATIONS.md](docs/AUTOMATIONS.md)               | Cron, Sentry, webhook automations |
 | [SECRETS.md](docs/SECRETS.md)                       | Repo secrets management           |
 | [DEBUGGING_PLAYBOOK.md](docs/DEBUGGING_PLAYBOOK.md) | Troubleshooting guide             |
+| [PI_ADAPTER.md](docs/PI_ADAPTER.md)                 | Pi adapter implementation details |
+| [IMAGE_PREBUILD.md](docs/IMAGE_PREBUILD.md)         | Image prebuilding                 |
+| [OPENAI_MODELS.md](docs/OPENAI_MODELS.md)           | OpenAI model configuration        |
 | [CHANGELOG.md](CHANGELOG.md)                        | Release history                   |
 
 ## Contributing

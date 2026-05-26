@@ -91,9 +91,9 @@ Click the delete button next to any secret row and confirm.
 
 Certain keys are reserved for system use and cannot be set as secrets:
 
-`PYTHONUNBUFFERED`, `SANDBOX_ID`, `SERVER_URL`, `SANDBOX_AUTH_TOKEN`, `REPO_OWNER`,
-`REPO_NAME`, `GITHUB_APP_TOKEN`, `SESSION_CONFIG`, `RESTORED_FROM_SNAPSHOT`,
-`OPENCODE_CONFIG_CONTENT`, `PATH`, `HOME`, `USER`, `SHELL`, `TERM`, `PWD`, `LANG`
+`PYTHONUNBUFFERED`, `SANDBOX_ID`, `SERVER_URL`, `SANDBOX_AUTH_TOKEN`, `REPO_OWNER`, `REPO_NAME`,
+`GITHUB_APP_TOKEN`, `SESSION_CONFIG`, `RESTORED_FROM_SNAPSHOT`, `OPENCODE_CONFIG_CONTENT`, `PATH`,
+`HOME`, `USER`, `SHELL`, `TERM`, `PWD`, `LANG`
 
 If you try to save a reserved key, the UI will show a validation error.
 

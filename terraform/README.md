@@ -49,7 +49,7 @@ terraform/
 ### 1. Required Tools
 
 ```bash
-# Terraform >= 1.9.0
+# Terraform >= 1.14.0
 brew install terraform
 
 # Modal CLI (for Modal deployments)
@@ -86,18 +86,18 @@ brew install node@22
 1. **Sign up** at [Modal](https://modal.com)
 2. **Create API Token** at Modal Settings
 
-### 5. GitHub Apps
+### 5. GitHub App
 
-1. **OAuth App** - For user authentication
-   - Create at: https://github.com/settings/developers
-   - Callback URL: `https://<your-vercel-app>.vercel.app/api/auth/callback/github`
+You only need **one GitHub App** — it handles both user authentication (OAuth) and repository
+access.
 
-2. **GitHub App** - For repository access in sandboxes
-   - Create at: https://github.com/settings/apps
-   - Convert private key to PKCS#8 format:
-     ```bash
-     openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in key.pem -out key-pkcs8.pem
-     ```
+- Create at: https://github.com/settings/apps
+- See [GETTING_STARTED.md Step 3](../docs/GETTING_STARTED.md#step-3-create-github-app) for full
+  permissions and configuration
+- Convert private key to PKCS#8 format:
+  ```bash
+  openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in key.pem -out key-pkcs8.pem
+  ```
 
 ### 6. Slack App
 
@@ -178,11 +178,9 @@ VERCEL_TEAM_ID
 MODAL_TOKEN_ID
 MODAL_TOKEN_SECRET
 
-# GitHub OAuth App
+# GitHub App (one app provides both OAuth and repo access)
 GH_OAUTH_CLIENT_ID
 GH_OAUTH_CLIENT_SECRET
-
-# GitHub App
 GH_APP_ID
 GH_APP_PRIVATE_KEY
 GH_APP_INSTALLATION_ID
@@ -328,17 +326,19 @@ Object in a Version if a deployment doesn't exist (i.e., migrations haven't been
 
 **First-time deployment with Durable Objects:**
 
-The first `terraform apply` may fail due to the chicken-and-egg problem. Workaround:
+The first `terraform apply` may fail due to the chicken-and-egg problem. Use the two-phase
+deployment approach:
 
-1. Comment out the `durable_objects` binding block in the module
-2. Run `terraform apply` to create the worker and deployment
-3. Uncomment the `durable_objects` binding
-4. Comment out the `migrations` block
-5. Run `terraform apply` again
+1. Set `enable_durable_object_bindings = false` and `enable_service_bindings = false` in
+   `terraform.tfvars`
+2. Run `terraform apply` to create the workers and initial deployments
+3. Set both to `true` in `terraform.tfvars`
+4. Run `terraform apply` again to enable bindings
 
-See
+See [GETTING_STARTED.md Step 7](../docs/GETTING_STARTED.md#step-7-deploy-with-terraform) for the
+full walkthrough and
 [Cloudflare's documentation](https://developers.cloudflare.com/workers/platform/infrastructure-as-code/)
-for details.
+for background on the Durable Object migration lifecycle.
 
 ### State Management
 
@@ -399,8 +399,8 @@ variables.
 
 ### Worker deployment fails
 
-1. Build workers first: `npm run build -w @open-inspect/control-plane`
-2. Check script exists: `ls packages/control-plane/dist/index.js`
+1. Build workers first: `npm run build -w @open-inspect/server`
+2. Check script exists: `ls packages/server/dist/index.js`
 3. Verify Cloudflare API token permissions:
    - `Workers Scripts: Edit`
    - `Workers KV Storage: Edit`

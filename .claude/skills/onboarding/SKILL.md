@@ -198,7 +198,7 @@ github_bot_username   = "{app-slug}[bot]"
 **Important**: Build the workers before running Terraform (Terraform references the built bundles):
 
 ```bash
-npm run build -w @open-inspect/control-plane -w @open-inspect/slack-bot -w @open-inspect/github-bot
+npm run build -w @open-inspect/server -w @open-inspect/slack-bot -w @open-inspect/github-bot
 ```
 
 **Phase 1** (bindings disabled):
@@ -300,7 +300,7 @@ Ask if user wants GitHub Actions CI/CD. If yes, use `gh secret set` for all requ
   `github_bot_username` matches the App's bot login
 - **Vercel build fails**: Terraform configures the monorepo build commands automatically
 - **"no such file or directory" for dist/index.js**: Build workers before Terraform:
-  `npm run build -w @open-inspect/control-plane -w @open-inspect/slack-bot -w @open-inspect/github-bot`
+  `npm run build -w @open-inspect/server -w @open-inspect/slack-bot -w @open-inspect/github-bot`
 - **Worker deployment fails**: Build shared package first: `npm run build -w @open-inspect/shared`
 
 ## Important Notes

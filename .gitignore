@@ -97,3 +97,12 @@ terraform/environments/production/.terraform*
 pi-information/
 personal_notes/
 wrangler-tail.toml
+
+# Newcomer audit reports
+newcomer-report-*.md
+newcomer-audit/
+stream-a-*.md
+stream-b-*.md
+verify-*.md
+progress.md
+stream-c-*.md

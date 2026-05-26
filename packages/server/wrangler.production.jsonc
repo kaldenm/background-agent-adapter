@@ -7,19 +7,19 @@
   "durable_objects": {
     "bindings": [
       { "name": "SESSION", "class_name": "SessionDO" },
-      { "name": "SCHEDULER", "class_name": "SchedulerDO" }
-    ]
+      { "name": "SCHEDULER", "class_name": "SchedulerDO" },
+    ],
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_id": "46bca5ab-cb34-47a0-87b9-376530b1ce36",
-      "database_name": "open-inspect-aldenmyers"
-    }
+      "database_name": "open-inspect-aldenmyers",
+    },
   ],
   "kv_namespaces": [{ "binding": "REPOS_CACHE", "id": "07741f61bbe349fd8d7a17a9d1970517" }],
   "triggers": {
-    "crons": ["* * * * *"]
+    "crons": ["* * * * *"],
   },
   "vars": {
     "GITHUB_CLIENT_ID": "Iv23li9vud1CCu9KNzLN",
@@ -28,6 +28,6 @@
     "DEPLOYMENT_NAME": "aldenmyers",
     "SANDBOX_PROVIDER": "daytona",
     "DAYTONA_API_URL": "https://app.daytona.io/api",
-    "DAYTONA_BASE_SNAPSHOT": "open-inspect-base-v10"
-  }
+    "DAYTONA_BASE_SNAPSHOT": "open-inspect-base-v10",
+  },
 }

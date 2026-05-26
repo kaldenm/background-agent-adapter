@@ -105,8 +105,8 @@ Open-Inspect uses a three-tier architecture spanning multiple cloud providers:
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │                        Session Sandbox                              │ │
 │  │  ┌────────────┐    ┌────────────┐    ┌────────────┐               │ │
-│  │  │ Supervisor │───▶│  OpenCode  │───▶│   Bridge   │───────────────┼─┼──▶ Control Plane
-│  │  └────────────┘    └────────────┘    └────────────┘               │ │
+│  │  │ Supervisor │───▶│   Agent    │───▶│   Bridge   │───────────────┼─┼──▶ Control Plane
+│  │  └────────────┘    └─via Adapter─┘    └────────────┘               │ │
 │  │                           │                                        │ │
 │  │                    Full Dev Environment                            │ │
 │  │              (Node.js, Python, git, Playwright)                    │ │
@@ -142,7 +142,7 @@ development environment.
 - Node.js 22, Python 3.12, git, curl
 - Package managers: npm, pnpm, pip, uv
 - agent-browser CLI + headless Chrome (for browser automation)
-- OpenCode (the coding agent)
+- A coding agent (OpenCode by default, or any agent via the adapter layer)
 
 Open-Inspect supports two backend patterns:
 
@@ -180,7 +180,7 @@ When you create a session for a repo without an existing snapshot:
 ```
 ┌─────────┐    ┌──────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌───────┐
 │ Sandbox │───▶│ Git Sync │───▶│ Setup Script│───▶│ Start Script│───▶│ Agent Start │───▶│ Ready │
-│ Created │    │ (clone)  │    │ (optional)  │    │ (optional)  │    │ (OpenCode)  │    │       │
+│ Created │    │ (clone)  │    │ (optional)  │    │ (optional)  │    │   (Agent)   │    │       │
 └─────────┘    └──────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └───────┘
                                      │                    │
                                      ▼                    ▼
@@ -191,7 +191,7 @@ When you create a session for a repo without an existing snapshot:
 2. **Git sync**: Clones your repository using GitHub App credentials
 3. **Setup script**: Runs `.openinspect/setup.sh` for provisioning (if present)
 4. **Start script**: Runs `.openinspect/start.sh` for runtime startup (if present)
-5. **Agent start**: OpenCode server starts and connects back to the control plane
+5. **Agent start**: The coding agent starts (via the adapter) and connects back to the control plane
 6. **Ready**: Sandbox accepts prompts
 
 ### Restore (From Snapshot)
@@ -246,7 +246,7 @@ Here's what happens when you send a prompt:
 
 ```
 ┌──────┐   ┌────────┐   ┌───────────────┐   ┌─────────┐   ┌──────────┐
-│ User │──▶│ Client │──▶│ Control Plane │──▶│ Sandbox │──▶│ OpenCode │
+│ User │──▶│ Client │──▶│ Control Plane │──▶│ Sandbox │──▶│  Agent   │
 └──────┘   └────────┘   └───────────────┘   └─────────┘   └──────────┘
               │                 │                              │
               │                 │         Events stream back   │
@@ -267,8 +267,9 @@ Here's what happens when you send a prompt:
 3. **Sandbox receives the prompt**: Via WebSocket, the control plane sends the prompt to the sandbox
    along with author information (for commit attribution).
 
-4. **OpenCode processes it**: The agent reads files, makes edits, runs commands—whatever the task
-   requires. Each action generates events.
+4. **The agent processes it**: It reads files, makes edits, runs commands—whatever the task
+   requires. Each action generates events that the adapter translates into the standard format the
+   bridge expects.
 
 5. **Events stream back**: Tool calls, token streams, and status updates flow back through the
    WebSocket to the control plane.
@@ -295,8 +296,10 @@ You can also stop the current execution if the agent is going down the wrong pat
 
 ## The Agent
 
-Open-Inspect uses [OpenCode](https://opencode.ai) as its coding agent. OpenCode is an open-source
-agent designed to run as a server, making it ideal for background execution.
+Open-Inspect uses a pluggable coding agent. [OpenCode](https://opencode.ai) is the default—an
+open-source agent designed to run as a server, making it ideal for background execution—but any
+coding agent can be swapped in via the adapter layer. See [AGENT_ADAPTER.md](AGENT_ADAPTER.md) for
+how to write a custom adapter.
 
 ### What the Agent Can Do
 

@@ -17,8 +17,8 @@ This package provides the data plane for Open-Inspect:
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Session Sandbox                              │
 │  ┌──────────────────┐  ┌─────────────────┐  ┌───────────────┐  │
-│  │  Supervisor      │  │  OpenCode       │  │  Bridge       │  │
-│  │  (entrypoint.py) │──│  Server         │──│  (bridge.py)  │  │
+│  │  Supervisor      │  │  Agent          │  │  Bridge       │  │
+│  │  (supervisor.py) │──│  (via Adapter)  │──│  (bridge.py)  │  │
 │  └──────────────────┘  └─────────────────┘  └───────────────┘  │
 │           │                    │                    │           │
 │           └────────────────────┼────────────────────┘           │
@@ -42,8 +42,8 @@ Base image definition with:
 ### Sandbox (`src/sandbox/`)
 
 - **manager.py**: Sandbox lifecycle (create, warm, snapshot)
-- **entrypoint.py**: Supervisor process (runs as PID 1)
-- **bridge.py**: WebSocket bridge to control plane
+- **supervisor.py**: Supervisor process (runs as PID 1)
+- **bridge.py**: WebSocket bridge to session server
 - **types.py**: Event and configuration types
 
 ### Auth (`src/auth/`)

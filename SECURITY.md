@@ -12,7 +12,8 @@ If you discover a security vulnerability, please report it responsibly.
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email: **[TODO: add your security contact email]**
+Instead, please use
+[GitHub's private vulnerability reporting](https://github.com/Goober-Codes/background-agent-adapter/security/advisories/new).
 
 Include:
 
@@ -27,7 +28,8 @@ issue before any public disclosure.
 ## Security Model
 
 This system is designed for **single-tenant deployment only**, where all users are trusted members
-of the same organization. See the [Security Model](README.md#security-model) section in the README.
+of the same organization. See the [Security Model](README.md#security-model-single-tenant-only)
+section in the README.
 
 Key points:
 

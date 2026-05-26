@@ -65,14 +65,11 @@ function createMockLogger(): Logger {
 
 function createMockEnv(): Env {
   const controlPlaneFetch = vi.fn().mockImplementation((url: string) => {
-    if (url === "https://internal/sessions") {
+    if (url === "https://internal/scheduler/dispatch") {
       return Promise.resolve(
-        new Response(JSON.stringify({ sessionId: "session-123" }), { status: 200 })
-      );
-    }
-    if (/\/sessions\/.+\/prompt$/.test(url)) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ messageId: "msg-456" }), { status: 200 })
+        new Response(JSON.stringify({ sessionId: "session-123", status: "created" }), {
+          status: 200,
+        })
       );
     }
     return Promise.resolve(new Response("Not found", { status: 404 }));
@@ -181,7 +178,6 @@ describe("handlePullRequestOpened", () => {
     expect(result).toEqual({
       outcome: "processed",
       session_id: "session-123",
-      message_id: "msg-456",
       handler_action: "auto_review",
     });
     expect(generateInstallationToken).toHaveBeenCalled();
@@ -192,24 +188,22 @@ describe("handlePullRequestOpened", () => {
     );
 
     const cpFetch = getControlPlaneFetch(env);
-    expect(cpFetch).toHaveBeenCalledTimes(2);
+    expect(cpFetch).toHaveBeenCalledTimes(1);
 
-    const sessionBody = JSON.parse(cpFetch.mock.calls[0][1].body);
-    expect(sessionBody.repoOwner).toBe("acme");
-    expect(sessionBody.repoName).toBe("widgets");
-    expect(sessionBody.title).toContain("Review PR #42");
-    expect(sessionBody.scmLogin).toBe("alice");
-    expect(sessionBody.scmUserId).toBe("1001");
-    expect(sessionBody.scmAvatarUrl).toBe("https://avatars.githubusercontent.com/u/1001");
-    expect(sessionBody.spawnSource).toBe("github-bot");
+    const body = JSON.parse(cpFetch.mock.calls[0][1].body);
+    expect(body.session.repoOwner).toBe("acme");
+    expect(body.session.repoName).toBe("widgets");
+    expect(body.session.title).toContain("Review PR #42");
+    expect(body.session.scmLogin).toBe("alice");
+    expect(body.session.scmUserId).toBe("1001");
+    expect(body.session.spawnSource).toBe("github-bot");
 
-    const promptBody = JSON.parse(cpFetch.mock.calls[1][1].body);
-    expect(promptBody.source).toBe("github");
-    expect(promptBody.authorId).toBe("github:1001");
-    expect(promptBody.content).toContain("Pull Request #42");
+    expect(body.prompt.source).toBe("github");
+    expect(body.prompt.authorId).toBe("github:1001");
+    expect(body.prompt.content).toContain("Pull Request #42");
 
     expect(log.info).toHaveBeenCalledWith(
-      "session.created",
+      "dispatch.succeeded",
       expect.objectContaining({ action: "auto_review" })
     );
   });
@@ -312,8 +306,8 @@ describe("handlePullRequestOpened", () => {
     await handlePullRequestOpened(env, log, pullRequestOpenedPayload, "trace-0");
 
     const cpFetch = getControlPlaneFetch(env);
-    const sessionBody = JSON.parse(cpFetch.mock.calls[0][1].body);
-    expect(sessionBody.model).toBe("anthropic/claude-opus-4-6");
+    const body = JSON.parse(cpFetch.mock.calls[0][1].body);
+    expect(body.session.model).toBe("anthropic/claude-opus-4-6");
   });
 
   it("passes reasoningEffort from config to session creation", async () => {
@@ -328,8 +322,8 @@ describe("handlePullRequestOpened", () => {
     await handlePullRequestOpened(env, log, pullRequestOpenedPayload, "trace-0");
 
     const cpFetch = getControlPlaneFetch(env);
-    const sessionBody = JSON.parse(cpFetch.mock.calls[0][1].body);
-    expect(sessionBody.reasoningEffort).toBe("high");
+    const body = JSON.parse(cpFetch.mock.calls[0][1].body);
+    expect(body.session.reasoningEffort).toBe("high");
   });
 });
 
@@ -343,7 +337,6 @@ describe("handleReviewRequested", () => {
     expect(result).toEqual({
       outcome: "processed",
       session_id: "session-123",
-      message_id: "msg-456",
       handler_action: "review",
     });
     expect(generateInstallationToken).toHaveBeenCalledWith({
@@ -359,43 +352,31 @@ describe("handleReviewRequested", () => {
     );
 
     const cpFetch = getControlPlaneFetch(env);
-    expect(cpFetch).toHaveBeenCalledTimes(2);
+    expect(cpFetch).toHaveBeenCalledTimes(1);
 
-    // Verify session creation
-    const sessionCall = cpFetch.mock.calls[0];
-    expect(sessionCall[0]).toBe("https://internal/sessions");
-    const sessionBody = JSON.parse(sessionCall[1].body);
-    expect(sessionBody.repoOwner).toBe("acme");
-    expect(sessionBody.repoName).toBe("widgets");
-    expect(sessionBody.title).toContain("Review PR #42");
-    expect(sessionBody.scmLogin).toBe("alice");
-    expect(sessionBody.scmUserId).toBe("1001");
-    expect(sessionBody.scmAvatarUrl).toBe("https://avatars.githubusercontent.com/u/1001");
-    expect(sessionBody.spawnSource).toBe("github-bot");
+    // Verify dispatch request
+    const dispatchCall = cpFetch.mock.calls[0];
+    expect(dispatchCall[0]).toBe("https://internal/scheduler/dispatch");
+    const body = JSON.parse(dispatchCall[1].body);
+    expect(body.session.repoOwner).toBe("acme");
+    expect(body.session.repoName).toBe("widgets");
+    expect(body.session.title).toContain("Review PR #42");
+    expect(body.session.scmLogin).toBe("alice");
+    expect(body.session.scmUserId).toBe("1001");
+    expect(body.session.spawnSource).toBe("github-bot");
 
-    // Verify prompt sending
-    const promptCall = cpFetch.mock.calls[1];
-    expect(promptCall[0]).toBe("https://internal/sessions/session-123/prompt");
-    const promptBody = JSON.parse(promptCall[1].body);
-    expect(promptBody.source).toBe("github");
-    expect(promptBody.authorId).toBe("github:1001");
-    expect(promptBody.content).toContain("Pull Request #42");
-    expect(promptBody.content).toContain("acme/widgets");
-    expect(promptBody.content).toContain("gh pr diff 42");
+    expect(body.prompt.source).toBe("github");
+    expect(body.prompt.authorId).toBe("github:1001");
+    expect(body.prompt.content).toContain("Pull Request #42");
+    expect(body.prompt.content).toContain("acme/widgets");
+    expect(body.prompt.content).toContain("gh pr diff 42");
 
     // Verify logging
     expect(log.info).toHaveBeenCalledWith(
-      "session.created",
+      "dispatch.succeeded",
       expect.objectContaining({
         session_id: "session-123",
         action: "review",
-      })
-    );
-    expect(log.info).toHaveBeenCalledWith(
-      "prompt.sent",
-      expect.objectContaining({
-        session_id: "session-123",
-        message_id: "msg-456",
       })
     );
   });
@@ -410,7 +391,6 @@ describe("handleReviewRequested", () => {
     expect(result).toEqual({ outcome: "skipped", skip_reason: "review_not_for_bot" });
     expect(generateInstallationToken).not.toHaveBeenCalled();
     expect(getControlPlaneFetch(env)).not.toHaveBeenCalled();
-    expect(log.debug).toHaveBeenCalledWith("handler.review_not_for_bot", expect.anything());
   });
 
   it("returns early if no reviewer specified", async () => {
@@ -451,7 +431,6 @@ describe("handleIssueComment", () => {
     expect(result).toEqual({
       outcome: "processed",
       session_id: "session-123",
-      message_id: "msg-456",
       handler_action: "comment",
     });
     expect(postReaction).toHaveBeenCalledWith(
@@ -461,18 +440,16 @@ describe("handleIssueComment", () => {
     );
 
     const cpFetch = getControlPlaneFetch(env);
-    expect(cpFetch).toHaveBeenCalledTimes(2);
+    expect(cpFetch).toHaveBeenCalledTimes(1);
 
-    const sessionBody = JSON.parse(cpFetch.mock.calls[0][1].body);
-    expect(sessionBody.scmLogin).toBe("bob");
-    expect(sessionBody.scmUserId).toBe("1002");
-    expect(sessionBody.scmAvatarUrl).toBe("https://avatars.githubusercontent.com/u/1002");
-    expect(sessionBody.spawnSource).toBe("github-bot");
+    const body = JSON.parse(cpFetch.mock.calls[0][1].body);
+    expect(body.session.scmLogin).toBe("bob");
+    expect(body.session.scmUserId).toBe("1002");
+    expect(body.session.spawnSource).toBe("github-bot");
 
-    const promptBody = JSON.parse(cpFetch.mock.calls[1][1].body);
-    expect(promptBody.content).toContain("please fix the error handling");
-    expect(promptBody.content).not.toContain("@test-bot[bot]");
-    expect(promptBody.authorId).toBe("github:1002");
+    expect(body.prompt.content).toContain("please fix the error handling");
+    expect(body.prompt.content).not.toContain("@test-bot[bot]");
+    expect(body.prompt.authorId).toBe("github:1002");
   });
 
   it("returns early if not a PR", async () => {
@@ -549,7 +526,6 @@ describe("handleReviewComment", () => {
     expect(result).toEqual({
       outcome: "processed",
       session_id: "session-123",
-      message_id: "msg-456",
       handler_action: "review_comment",
     });
     expect(postReaction).toHaveBeenCalledWith(
@@ -559,18 +535,17 @@ describe("handleReviewComment", () => {
     );
 
     const cpFetch = getControlPlaneFetch(env);
+    expect(cpFetch).toHaveBeenCalledTimes(1);
 
-    const sessionBody = JSON.parse(cpFetch.mock.calls[0][1].body);
-    expect(sessionBody.scmLogin).toBe("carol");
-    expect(sessionBody.scmUserId).toBe("1003");
-    expect(sessionBody.scmAvatarUrl).toBe("https://avatars.githubusercontent.com/u/1003");
-    expect(sessionBody.spawnSource).toBe("github-bot");
+    const body = JSON.parse(cpFetch.mock.calls[0][1].body);
+    expect(body.session.scmLogin).toBe("carol");
+    expect(body.session.scmUserId).toBe("1003");
+    expect(body.session.spawnSource).toBe("github-bot");
 
-    const promptBody = JSON.parse(cpFetch.mock.calls[1][1].body);
-    expect(promptBody.content).toContain("src/cache.ts");
-    expect(promptBody.content).toContain("const cache = new Map()");
-    expect(promptBody.content).toContain("comments/200/replies");
-    expect(promptBody.authorId).toBe("github:1003");
+    expect(body.prompt.content).toContain("src/cache.ts");
+    expect(body.prompt.content).toContain("const cache = new Map()");
+    expect(body.prompt.content).toContain("comments/200/replies");
+    expect(body.prompt.authorId).toBe("github:1003");
   });
 
   it("returns early if no @mention", async () => {
@@ -622,7 +597,7 @@ describe("handleReviewComment", () => {
 });
 
 describe("error handling", () => {
-  it("throws when session creation fails", async () => {
+  it("throws when scheduler dispatch fails", async () => {
     const env = createMockEnv();
     const log = createMockLogger();
     getControlPlaneFetch(env).mockResolvedValue(
@@ -631,18 +606,18 @@ describe("error handling", () => {
 
     await expect(
       handleReviewRequested(env, log, reviewRequestedPayload, "trace-err")
-    ).rejects.toThrow("Session creation failed: 500");
+    ).rejects.toThrow("Scheduler dispatch failed: 500");
   });
 
-  it("proceeds with session even if reaction fails", async () => {
+  it("proceeds with dispatch even if reaction fails", async () => {
     const env = createMockEnv();
     const log = createMockLogger();
     vi.mocked(postReaction).mockResolvedValue(false);
 
     await handleReviewRequested(env, log, reviewRequestedPayload, "trace-reaction");
 
-    // Session should still be created despite reaction failure
-    expect(getControlPlaneFetch(env)).toHaveBeenCalledTimes(2);
+    // Dispatch should still succeed despite reaction failure
+    expect(getControlPlaneFetch(env)).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -668,9 +643,9 @@ describe("integration config", () => {
     await handleReviewRequested(env, log, reviewRequestedPayload, "trace-model");
 
     const cpFetch = getControlPlaneFetch(env);
-    const sessionBody = JSON.parse(cpFetch.mock.calls[0][1].body);
-    expect(sessionBody.model).toBe("anthropic/claude-opus-4-6");
-    expect(sessionBody.reasoningEffort).toBe("low");
+    const body = JSON.parse(cpFetch.mock.calls[0][1].body);
+    expect(body.session.model).toBe("anthropic/claude-opus-4-6");
+    expect(body.session.reasoningEffort).toBe("low");
   });
 
   it("fail-closed config skips webhook (empty enabledRepos)", async () => {
@@ -714,7 +689,7 @@ describe("integration config", () => {
 
     // Should proceed normally — null means all repos allowed
     const cpFetch = getControlPlaneFetch(env);
-    expect(cpFetch).toHaveBeenCalledTimes(2);
+    expect(cpFetch).toHaveBeenCalledTimes(1);
   });
 
   it("rejects sender not in allowedTriggerUsers (handleIssueComment)", async () => {
@@ -747,8 +722,8 @@ describe("integration config", () => {
 
     await handleIssueComment(env, log, issueCommentPayload, "trace-allowed");
 
-    // bob matches → proceeds to session creation
-    expect(getControlPlaneFetch(env)).toHaveBeenCalledTimes(2);
+    // bob matches → proceeds to dispatch
+    expect(getControlPlaneFetch(env)).toHaveBeenCalledTimes(1);
   });
 
   it("empty allowedTriggerUsers rejects all senders (handleReviewRequested)", async () => {
@@ -857,9 +832,9 @@ describe("integration config", () => {
     await handleReviewRequested(env, log, reviewRequestedPayload, "trace-review-instr");
 
     const cpFetch = getControlPlaneFetch(env);
-    const promptBody = JSON.parse(cpFetch.mock.calls[1][1].body);
-    expect(promptBody.content).toContain("## Custom Instructions");
-    expect(promptBody.content).toContain("Focus on security.");
+    const body = JSON.parse(cpFetch.mock.calls[0][1].body);
+    expect(body.prompt.content).toContain("## Custom Instructions");
+    expect(body.prompt.content).toContain("Focus on security.");
   });
 
   it("commentActionInstructions flows into comment prompt (handleIssueComment)", async () => {
@@ -873,9 +848,9 @@ describe("integration config", () => {
     await handleIssueComment(env, log, issueCommentPayload, "trace-comment-instr");
 
     const cpFetch = getControlPlaneFetch(env);
-    const promptBody = JSON.parse(cpFetch.mock.calls[1][1].body);
-    expect(promptBody.content).toContain("## Custom Instructions");
-    expect(promptBody.content).toContain("Run tests first.");
+    const body = JSON.parse(cpFetch.mock.calls[0][1].body);
+    expect(body.prompt.content).toContain("## Custom Instructions");
+    expect(body.prompt.content).toContain("Run tests first.");
   });
 
   it("codeReviewInstructions flows into review prompt (handlePullRequestOpened)", async () => {
@@ -889,9 +864,9 @@ describe("integration config", () => {
     await handlePullRequestOpened(env, log, pullRequestOpenedPayload, "trace-pr-instr");
 
     const cpFetch = getControlPlaneFetch(env);
-    const promptBody = JSON.parse(cpFetch.mock.calls[1][1].body);
-    expect(promptBody.content).toContain("## Custom Instructions");
-    expect(promptBody.content).toContain("Check for SQL injection.");
+    const body = JSON.parse(cpFetch.mock.calls[0][1].body);
+    expect(body.prompt.content).toContain("## Custom Instructions");
+    expect(body.prompt.content).toContain("Check for SQL injection.");
   });
 
   it("commentActionInstructions flows into comment prompt (handleReviewComment)", async () => {
@@ -905,9 +880,9 @@ describe("integration config", () => {
     await handleReviewComment(env, log, reviewCommentPayload, "trace-rc-instr");
 
     const cpFetch = getControlPlaneFetch(env);
-    const promptBody = JSON.parse(cpFetch.mock.calls[1][1].body);
-    expect(promptBody.content).toContain("## Custom Instructions");
-    expect(promptBody.content).toContain("Prefer minimal diffs.");
+    const body = JSON.parse(cpFetch.mock.calls[0][1].body);
+    expect(body.prompt.content).toContain("## Custom Instructions");
+    expect(body.prompt.content).toContain("Prefer minimal diffs.");
   });
 
   it("null instructions produce no Custom Instructions section (backward compat)", async () => {
@@ -918,7 +893,7 @@ describe("integration config", () => {
     await handleReviewRequested(env, log, reviewRequestedPayload, "trace-null-instr");
 
     const cpFetch = getControlPlaneFetch(env);
-    const promptBody = JSON.parse(cpFetch.mock.calls[1][1].body);
-    expect(promptBody.content).not.toContain("## Custom Instructions");
+    const body = JSON.parse(cpFetch.mock.calls[0][1].body);
+    expect(body.prompt.content).not.toContain("## Custom Instructions");
   });
 });

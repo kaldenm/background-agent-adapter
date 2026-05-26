@@ -128,6 +128,6 @@ fi
 printf '\n'
 info "Setup complete! You can now:"
 info "  npm run dev -w @open-inspect/web        # Start web dev server"
-info "  npm run test -w @open-inspect/control-plane  # Run control-plane tests"
+info "  npm run test -w @open-inspect/server       # Run server tests"
 info "  npm run lint                             # Lint all packages"
 info "  npm run typecheck                        # Type-check all packages"
