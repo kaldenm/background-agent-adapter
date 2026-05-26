@@ -98,7 +98,8 @@ pi-information/
 personal_notes/
 wrangler-tail.toml
 
-# Newcomer audit reports
+# Audit and report artifacts
+audit/
 newcomer-report-*.md
 newcomer-audit/
 stream-a-*.md

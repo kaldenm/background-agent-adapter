@@ -3,6 +3,12 @@
   "description": "Pluggable agent adapter layer for background coding agents. Swap coding agents by implementing 13 methods and setting one env var.",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Goober-Codes/background-agent-adapter"
+  },
+  "author": "Alden Myers",
   "keywords": [
     "background-agent",
     "coding-agent",
