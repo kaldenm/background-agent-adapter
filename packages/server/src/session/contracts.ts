@@ -20,6 +20,8 @@ export const SessionInternalPaths = {
   unarchive: "/internal/unarchive",
   verifySandboxToken: "/internal/verify-sandbox-token",
   openaiTokenRefresh: "/internal/openai-token-refresh",
+  anthropicTokenRefresh: "/internal/anthropic-token-refresh",
+  anthropicTokenSyncBack: "/internal/anthropic-token-sync-back",
   spawnContext: "/internal/spawn-context",
   childSummary: "/internal/child-summary",
   updateTitle: "/internal/update-title",

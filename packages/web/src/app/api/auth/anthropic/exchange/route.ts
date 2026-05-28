@@ -85,7 +85,11 @@ export async function POST(request: NextRequest) {
     const saveResponse = await serverFetch("/secrets", {
       method: "PUT",
       body: JSON.stringify({
-        secrets: { ANTHROPIC_OAUTH_TOKEN: tokenData.refresh_token },
+        secrets: {
+          ANTHROPIC_OAUTH_TOKEN: tokenData.refresh_token,
+          ANTHROPIC_OAUTH_ACCESS_TOKEN: "",
+          ANTHROPIC_OAUTH_ACCESS_TOKEN_EXPIRES_AT: "0",
+        },
       }),
     });
 

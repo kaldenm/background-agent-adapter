@@ -190,6 +190,8 @@ const PUBLIC_ROUTES: RegExp[] = [
 const SANDBOX_AUTH_ROUTES: RegExp[] = [
   /^\/sessions\/[^/]+\/pr$/, // PR creation from sandbox
   /^\/sessions\/[^/]+\/openai-token-refresh$/, // OpenAI token refresh from sandbox
+  /^\/sessions\/[^/]+\/anthropic-token-refresh$/, // Anthropic token refresh from sandbox
+  /^\/sessions\/[^/]+\/anthropic-token-sync-back$/, // Anthropic rotated token sync-back from sandbox
   /^\/sessions\/[^/]+\/media$/, // Media upload from sandbox
   /^\/sessions\/[^/]+\/children$/, // POST spawn, GET list
   /^\/sessions\/[^/]+\/children\/[^/]+$/, // GET child detail
@@ -481,6 +483,16 @@ const routes: Route[] = [
     method: "POST",
     pattern: parsePattern("/sessions/:id/openai-token-refresh"),
     handler: handleOpenAITokenRefresh,
+  },
+  {
+    method: "POST",
+    pattern: parsePattern("/sessions/:id/anthropic-token-refresh"),
+    handler: handleAnthropicTokenRefresh,
+  },
+  {
+    method: "POST",
+    pattern: parsePattern("/sessions/:id/anthropic-token-sync-back"),
+    handler: handleAnthropicTokenSyncBack,
   },
   {
     method: "POST",
@@ -1089,17 +1101,101 @@ async function handleDeleteSession(
   request: Request,
   env: Env,
   match: RegExpMatchArray,
-  _ctx: RequestContext
+  ctx: RequestContext
 ): Promise<Response> {
   const sessionId = match.groups?.id;
   if (!sessionId) return error("Session ID required");
 
-  // Delete from D1 index
+  // 1. Cancel the session (stops execution + sandbox) via the DO
+  try {
+    const doId = env.SESSION.idFromName(sessionId);
+    const stub = env.SESSION.get(doId);
+
+    // Get session state to find the Daytona sandbox ID before cancelling
+    const stateResponse = await stub.fetch(
+      internalRequest(
+        buildSessionInternalUrl(SessionInternalPaths.state),
+        { method: "GET" },
+        ctx
+      )
+    );
+
+    let daytona_provider_object_id: string | null = null;
+    if (stateResponse.ok) {
+      try {
+        const state = (await stateResponse.json()) as Record<string, unknown>;
+        // The provider object ID (Daytona UUID) is on the sandbox row
+        // We need to get it from a new internal endpoint or parse from state
+        daytona_provider_object_id = (state as any)._sandbox_provider_object_id ?? null;
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
+    // Cancel the session (stops execution, shuts down sandbox)
+    await stub.fetch(
+      internalRequest(
+        buildSessionInternalUrl(SessionInternalPaths.cancel),
+        { method: "POST" },
+        ctx
+      )
+    ).catch(() => {
+      // Session might already be cancelled/completed — that's fine
+    });
+  } catch (e) {
+    logger.warn("delete_session.cancel_failed", {
+      session_id: sessionId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    // Continue with deletion even if cancel fails
+  }
+
+  // 2. Delete the Daytona sandbox if SANDBOX_PROVIDER is daytona
+  if (env.SANDBOX_PROVIDER === "daytona" && env.DAYTONA_API_URL && env.DAYTONA_API_KEY) {
+    try {
+      // List sandboxes with the session label to find the right one
+      const listResponse = await fetch(`${env.DAYTONA_API_URL}/sandbox`, {
+        headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}` },
+      });
+
+      if (listResponse.ok) {
+        const data = (await listResponse.json()) as {
+          items?: Array<{ id: string; labels?: Record<string, string> }>;
+        };
+        const sandboxes = data.items ?? [];
+
+        // Find sandboxes matching this session
+        const matching = sandboxes.filter(
+          (s) => s.labels?.openinspect_session_id === sessionId
+        );
+
+        for (const sandbox of matching) {
+          const deleteResponse = await fetch(
+            `${env.DAYTONA_API_URL}/sandbox/${sandbox.id}`,
+            {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}` },
+            }
+          );
+          logger.info("delete_session.sandbox_deleted", {
+            session_id: sessionId,
+            daytona_sandbox_id: sandbox.id,
+            status: deleteResponse.status,
+          });
+        }
+      }
+    } catch (e) {
+      logger.warn("delete_session.sandbox_cleanup_failed", {
+        session_id: sessionId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      // Continue with D1 deletion even if Daytona cleanup fails
+    }
+  }
+
+  // 3. Delete from D1 index
   const sessionStore = new SessionIndexStore(env.DB);
   await sessionStore.delete(sessionId);
-
-  // Note: Durable Object data will be garbage collected by Cloudflare
-  // when no longer referenced. We could also call a cleanup method on the DO.
 
   return json({ status: "deleted", sessionId });
 }
@@ -1675,6 +1771,48 @@ async function handleOpenAITokenRefresh(
     internalRequest(
       buildSessionInternalUrl(SessionInternalPaths.openaiTokenRefresh),
       { method: "POST" },
+      ctx
+    )
+  );
+}
+
+async function handleAnthropicTokenRefresh(
+  _request: Request,
+  env: Env,
+  match: RegExpMatchArray,
+  ctx: RequestContext
+): Promise<Response> {
+  const stub = getSessionStub(env, match);
+  if (!stub) return error("Session ID required");
+
+  return stub.fetch(
+    internalRequest(
+      buildSessionInternalUrl(SessionInternalPaths.anthropicTokenRefresh),
+      { method: "POST" },
+      ctx
+    )
+  );
+}
+
+async function handleAnthropicTokenSyncBack(
+  request: Request,
+  env: Env,
+  match: RegExpMatchArray,
+  ctx: RequestContext
+): Promise<Response> {
+  const stub = getSessionStub(env, match);
+  if (!stub) return error("Session ID required");
+
+  const body = await request.text();
+
+  return stub.fetch(
+    internalRequest(
+      buildSessionInternalUrl(SessionInternalPaths.anthropicTokenSyncBack),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      },
       ctx
     )
   );

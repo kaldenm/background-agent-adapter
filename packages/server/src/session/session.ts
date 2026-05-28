@@ -66,6 +66,8 @@ export class Session extends DurableObject<Env> {
     unarchive: (request) => this.services.sessionLifecycleHandler.unarchive(request),
     verifySandboxToken: (request) => this.services.sandboxHandler.verifySandboxToken(request),
     openaiTokenRefresh: () => this.services.sandboxHandler.openaiTokenRefresh(),
+    anthropicTokenRefresh: () => this.services.sandboxHandler.anthropicTokenRefresh(),
+    anthropicTokenSyncBack: (request) => this.services.sandboxHandler.anthropicTokenSyncBack(request),
     spawnContext: () => this.services.childSessionsHandler.getSpawnContext(),
     childSummary: () => this.services.childSessionsHandler.getChildSummary(),
     cancel: () => this.services.sessionLifecycleHandler.cancel(),

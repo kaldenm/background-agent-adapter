@@ -41,6 +41,7 @@ import { createKvCacheStore } from "@open-inspect/shared";
 import { SessionWebSocketManagerImpl, type SessionWebSocketManager } from "./websocket-manager";
 import { SessionPullRequestService } from "./pull-request-service";
 import { OpenAITokenRefreshService } from "./openai-token-refresh-service";
+import { AnthropicTokenRefreshService } from "./anthropic-token-refresh-service";
 import { ParticipantService } from "./participant-service";
 import { SessionServer } from "./session-server";
 import { UserScmTokenStore } from "../db/user-scm-tokens";
@@ -303,6 +304,24 @@ export function createServices(deps: SessionCoreDeps): SessionServices {
         log
       );
       return service.refresh(session);
+    },
+    refreshAnthropicToken: async (session) => {
+      const service = new AnthropicTokenRefreshService(
+        env.DB!,
+        env.REPO_SECRETS_ENCRYPTION_KEY!,
+        (sessionRow) => deps.ensureRepoId(sessionRow),
+        log
+      );
+      return service.refresh(session);
+    },
+    persistRotatedAnthropicToken: async (session, newRefreshToken) => {
+      const service = new AnthropicTokenRefreshService(
+        env.DB!,
+        env.REPO_SECRETS_ENCRYPTION_KEY!,
+        (sessionRow) => deps.ensureRepoId(sessionRow),
+        log
+      );
+      return service.persistRotatedToken(session, newRefreshToken);
     },
     isOpenAISecretsConfigured: () => Boolean(env.DB && env.REPO_SECRETS_ENCRYPTION_KEY),
     broadcast: (message) => deps.broadcast(message),

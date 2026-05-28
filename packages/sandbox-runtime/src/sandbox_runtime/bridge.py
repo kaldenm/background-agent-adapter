@@ -63,6 +63,12 @@ REQUIRED_EVENT_FIELDS: dict[str, list[str]] = {
 }
 
 
+# Path to Pi's auth.json where rotated OAuth tokens are stored
+_PI_AUTH_JSON_PATHS = [
+    Path.home() / ".pi" / "agent" / "auth.json",
+]
+
+
 class AgentBridge:
     """
     Bridge between sandbox agent instance and control plane.
@@ -157,6 +163,12 @@ class AgentBridge:
 
         # Event buffer: survives WS reconnection, flushed on reconnect
         self._event_buffer: list[dict[str, Any]] = []
+
+        # Track the original Anthropic OAuth refresh token from env so we
+        # can detect when Pi rotates it and sync the new one back to D1.
+        self._original_anthropic_refresh_token: str | None = os.environ.get(
+            "ANTHROPIC_OAUTH_TOKEN"
+        ) or os.environ.get("ANTHROPIC_OAUTH_REFRESH_TOKEN")
 
         # Pending ACKs: events sent but not yet acknowledged by the control plane.
         # Keyed by ackId, re-sent on reconnect until the DO confirms receipt.
@@ -596,6 +608,10 @@ class AgentBridge:
 
             if had_error:
                 outcome = "error"
+
+            # Sync back rotated Anthropic OAuth token if Pi refreshed it
+            await self._sync_back_anthropic_token()
+
             # Bridge sends final we are done event to control plane after the loop 
             await self._send_event(
                 {
@@ -827,6 +843,67 @@ class AgentBridge:
                     "timestamp": time.time(),
                 }
             )
+
+    async def _sync_back_anthropic_token(self) -> None:
+        """Read Pi's auth.json and sync rotated Anthropic refresh token back to D1.
+
+        Anthropic uses rotating refresh tokens — each use invalidates the old
+        one. Pi refreshes internally and writes the new token to auth.json.
+        If we don't sync it back, the next sandbox gets a revoked token.
+        """
+        if not self._original_anthropic_refresh_token:
+            return  # No OAuth configured, nothing to sync
+
+        if not self.server_url:
+            return  # No control plane to sync to
+
+        for auth_path in _PI_AUTH_JSON_PATHS:
+            if not auth_path.exists():
+                continue
+
+            try:
+                auth_data = json.loads(auth_path.read_text())
+                anthropic_auth = auth_data.get("anthropic", {})
+                current_refresh = anthropic_auth.get("refresh", "")
+
+                if (
+                    current_refresh
+                    and current_refresh != self._original_anthropic_refresh_token
+                ):
+                    self.log.info(
+                        "bridge.anthropic_token_rotated",
+                        detail="Pi rotated the Anthropic refresh token, syncing back to D1",
+                    )
+
+                    # Build the internal endpoint URL
+                    # server_url is the control plane base URL (e.g. https://server.workers.dev)
+                    sync_url = (
+                        f"{self.server_url}/sessions/{self.session_id}"
+                        f"/anthropic-token-sync-back"
+                    )
+
+                    if self.http_client:
+                        resp = await self.http_client.post(
+                            sync_url,
+                            json={"refresh_token": current_refresh},
+                            headers={"Authorization": f"Bearer {self.auth_token}"},
+                            timeout=10.0,
+                        )
+
+                        if resp.status_code == 200:
+                            # Update our baseline so we don't sync the same token twice
+                            self._original_anthropic_refresh_token = current_refresh
+                            self.log.info("bridge.anthropic_token_synced")
+                        else:
+                            self.log.warn(
+                                "bridge.anthropic_token_sync_failed",
+                                status=resp.status_code,
+                                body=resp.text[:200],
+                            )
+                    break  # Only need to check the first existing auth.json
+
+            except Exception as e:
+                self.log.warn("bridge.anthropic_token_sync_error", exc=e)
 
     async def _configure_git_identity(self, user: GitUser) -> None:
         """Configure git identity for commit attribution."""

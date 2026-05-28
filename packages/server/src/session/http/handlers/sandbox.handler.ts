@@ -2,6 +2,7 @@ import type { Logger } from "../../../logger";
 import type { SessionArtifact } from "@open-inspect/shared";
 import type { ParticipantRole, SandboxEvent, ServerMessage } from "../../../types";
 import type { OpenAITokenRefreshResult } from "../../openai-token-refresh-service";
+import type { AnthropicTokenRefreshResult } from "../../anthropic-token-refresh-service";
 import type { SessionRepository } from "../../repository";
 import type { SandboxRow, SessionRow } from "../../types";
 import { assertArtifactType } from "../../types";
@@ -24,6 +25,11 @@ export interface SandboxHandlerDeps {
   isValidSandboxToken: (token: string | null, sandbox: SandboxRow | null) => Promise<boolean>;
   getSession: () => SessionRow | null;
   refreshOpenAIToken: (session: SessionRow) => Promise<OpenAITokenRefreshResult>;
+  refreshAnthropicToken: (session: SessionRow) => Promise<AnthropicTokenRefreshResult>;
+  persistRotatedAnthropicToken: (
+    session: SessionRow,
+    newRefreshToken: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   isOpenAISecretsConfigured: () => boolean;
   broadcast: (message: ServerMessage) => void;
   generateId: () => string;
@@ -44,6 +50,8 @@ export interface SandboxHandler {
   addParticipant: (request: Request) => Promise<Response>;
   verifySandboxToken: (request: Request) => Promise<Response>;
   openaiTokenRefresh: () => Promise<Response>;
+  anthropicTokenRefresh: () => Promise<Response>;
+  anthropicTokenSyncBack: (request: Request) => Promise<Response>;
 }
 
 export function createSandboxHandler(deps: SandboxHandlerDeps): SandboxHandler {
@@ -161,6 +169,56 @@ export function createSandboxHandler(deps: SandboxHandlerDeps): SandboxHandler {
 
       deps.getLog().info("Sandbox token verified successfully");
       return Response.json({ valid: true }, { status: 200 });
+    },
+
+    async anthropicTokenRefresh(): Promise<Response> {
+      const session = deps.getSession();
+      if (!session) {
+        return Response.json({ error: "No session" }, { status: 404 });
+      }
+
+      if (!deps.isOpenAISecretsConfigured()) {
+        return Response.json({ error: "Secrets not configured" }, { status: 500 });
+      }
+
+      const result = await deps.refreshAnthropicToken(session);
+      if (!result.ok) {
+        return Response.json({ error: result.error }, { status: result.status });
+      }
+
+      return Response.json(
+        {
+          access_token: result.accessToken,
+          refresh_token: result.refreshToken,
+          expires_in: result.expiresIn,
+        },
+        { status: 200 }
+      );
+    },
+
+    async anthropicTokenSyncBack(request: Request): Promise<Response> {
+      const session = deps.getSession();
+      if (!session) {
+        return Response.json({ error: "No session" }, { status: 404 });
+      }
+
+      let body: { refresh_token: string };
+      try {
+        body = (await request.json()) as { refresh_token: string };
+      } catch {
+        return Response.json({ error: "Invalid request body" }, { status: 400 });
+      }
+
+      if (!body.refresh_token) {
+        return Response.json({ error: "Missing refresh_token" }, { status: 400 });
+      }
+
+      const result = await deps.persistRotatedAnthropicToken(session, body.refresh_token);
+      if (!result.ok) {
+        return Response.json({ error: result.error }, { status: 500 });
+      }
+
+      return Response.json({ status: "ok" }, { status: 200 });
     },
 
     async openaiTokenRefresh(): Promise<Response> {

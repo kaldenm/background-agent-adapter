@@ -257,7 +257,7 @@ class PiAdapter(AgentAdapter):
                 await self._send_command({"type": "set_thinking_level", "level": level})
                 yield self._make_status_event("thinking_set", f"Thinking: {level}")
             except Exception as e:
-                self.log.warn("pi.set_thinking_failed", level=level, exc=e)
+                self.log.warn("pi.set_thinking_failed", thinking_level=level, exc=e)
 
         # Send the prompt
         try:
@@ -519,17 +519,36 @@ class PiAdapter(AgentAdapter):
         except Exception as e:
             self.log.warn("pi.stdout_reader_error", exc=e)
 
-        # Signal crash to any waiting consumer
-        await self._event_queue.put({"type": "_pi_eof"})
+        # Capture exit info before signaling EOF
+        exit_code = None
+        if self._process:
+            try:
+                exit_code = self._process.returncode
+                if exit_code is None:
+                    # Process might still be exiting, wait briefly
+                    try:
+                        exit_code = await asyncio.wait_for(self._process.wait(), timeout=2.0)
+                    except TimeoutError:
+                        pass
+            except Exception:
+                pass
+
+        self.log.warn("pi.stdout_eof", exit_code=exit_code)
+        await self._event_queue.put({"type": "_pi_eof", "exit_code": exit_code})
 
     async def _forward_stderr(self) -> None:
-        """Forward Pi's stderr to supervisor stdout (logs)."""
+        """Forward Pi's stderr to supervisor stdout (logs) and capture last lines."""
         if not self._process or not self._process.stderr:
             return
 
+        self._last_stderr_lines: list[str] = []
         try:
             async for line in self._process.stderr:
-                print(f"[pi] {line.decode().rstrip()}")
+                decoded = line.decode().rstrip()
+                print(f"[pi] {decoded}")
+                self._last_stderr_lines.append(decoded)
+                if len(self._last_stderr_lines) > 20:
+                    self._last_stderr_lines.pop(0)
         except Exception:
             pass
 
@@ -539,6 +558,7 @@ class PiAdapter(AgentAdapter):
 
     async def _read_agent_events(self, message_id: str) -> AsyncIterator[dict[str, Any]]:
         """Read events from queue until agent_end, translating to bridge format."""
+        had_substantive_event = False
         while True:
             try:
                 event = await asyncio.wait_for(
@@ -556,21 +576,36 @@ class PiAdapter(AgentAdapter):
 
             # EOF — process died
             if event_type == "_pi_eof":
-                yield self._make_status_event("crashed", "Pi process exited unexpectedly")
+                exit_code = event.get("exit_code")
+                stderr_tail = "\n".join(getattr(self, "_last_stderr_lines", [])[-10:])
+                detail = f"Pi exited (code={exit_code})"
+                if stderr_tail:
+                    detail += f"\nstderr: {stderr_tail[:500]}"
+                self.log.error("pi.process_died", exit_code=exit_code, stderr_tail=stderr_tail[:500])
+                yield self._make_status_event("crashed", detail)
                 yield {
                     "type": "error",
-                    "error": "Pi process exited unexpectedly",
+                    "error": detail,
                     "messageId": message_id,
                 }
                 return
 
             # Agent done
             if event_type == "agent_end":
+                if not had_substantive_event:
+                    self.log.error("pi.silent_completion", message_id=message_id)
+                    yield {
+                        "type": "error",
+                        "error": "Agent completed with no output — possible auth or configuration failure",
+                        "messageId": message_id,
+                    }
                 return
 
             # Translate and yield
             bridge_event = self._convert_pi_event_to_standard(event, message_id)
             if bridge_event:
+                if bridge_event.get("type") in ("token", "tool_call", "error"):
+                    had_substantive_event = True
                 yield bridge_event
 
     def _convert_pi_event_to_standard(self, event: dict[str, Any], message_id: str) -> dict[str, Any] | None:
@@ -587,6 +622,18 @@ class PiAdapter(AgentAdapter):
 
         elif event_type == "turn_end":
             msg = event.get("message", {})
+            stop_reason = msg.get("stopReason")
+            error_message = msg.get("errorMessage")
+
+            # Surface auth/API errors that Pi reports via stopReason
+            if stop_reason == "error" and error_message:
+                self.log.error("pi.turn_error", error=error_message[:500], message_id=message_id)
+                return {
+                    "type": "error",
+                    "error": f"Pi error: {error_message}",
+                    "messageId": message_id,
+                }
+
             usage = msg.get("usage", {})
             cost_info = usage.get("cost", {})
             return {
