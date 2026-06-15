@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { buildSessionHref, type SessionItem } from "@/components/session-sidebar";
 import { SIDEBAR_SESSIONS_KEY } from "@/lib/session-list";
+import { deleteSession } from "@/lib/delete-session";
+import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import { formatRelativeTime } from "@/lib/time";
 
 const PAGE_SIZE = 20;
@@ -69,6 +71,22 @@ export function DataControlsSettings() {
     }
   };
 
+  const handleDelete = async (sessionId: string) => {
+    setHiddenIds((prev) => new Set(prev).add(sessionId));
+    const didDelete = await deleteSession(sessionId);
+    if (didDelete) {
+      mutate(SIDEBAR_SESSIONS_KEY);
+      mutate(ARCHIVED_SESSIONS_KEY);
+    } else {
+      // Revert optimistic hide
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        next.delete(sessionId);
+        return next;
+      });
+    }
+  };
+
   const sessionCount = sessions.length;
 
   return (
@@ -101,6 +119,7 @@ export function DataControlsSettings() {
                 key={session.id}
                 session={session}
                 onUnarchive={handleUnarchive}
+                onDelete={handleDelete}
               />
             ))}
           </div>
@@ -125,32 +144,54 @@ export function DataControlsSettings() {
 function ArchivedSessionRow({
   session,
   onUnarchive,
+  onDelete,
 }: {
   session: SessionItem;
   onUnarchive: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const displayTitle = session.title || `${session.repoOwner}/${session.repoName}`;
   const repoInfo = `${session.repoOwner}/${session.repoName}`;
   const timestamp = session.updatedAt || session.createdAt;
   const relativeTime = formatRelativeTime(timestamp);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   return (
-    <div className="group flex items-center justify-between px-4 py-3 hover:bg-muted transition">
-      <Link href={buildSessionHref(session)} className="flex-1 min-w-0 mr-3">
-        <div className="truncate text-sm font-medium text-foreground">{displayTitle}</div>
-        <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
-          <span>{relativeTime}</span>
-          <span>&middot;</span>
-          <span className="truncate">{repoInfo}</span>
+    <>
+      <div className="group flex items-center justify-between px-4 py-3 hover:bg-muted transition">
+        <Link href={buildSessionHref(session)} className="flex-1 min-w-0 mr-3">
+          <div className="truncate text-sm font-medium text-foreground">{displayTitle}</div>
+          <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
+            <span>{relativeTime}</span>
+            <span>&middot;</span>
+            <span className="truncate">{repoInfo}</span>
+          </div>
+        </Link>
+        <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100">
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => onUnarchive(session.id)}
+          >
+            Unarchive
+          </Button>
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => setShowDeleteDialog(true)}
+            className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
+          >
+            Delete
+          </Button>
         </div>
-      </Link>
-      <Button
-        variant="outline"
-        size="xs"
-        onClick={() => onUnarchive(session.id)}
-        className="flex-shrink-0 opacity-0 group-hover:opacity-100"
-      >
-        Unarchive
-      </Button>
-    </div>
+      </div>
+      <DeleteSessionDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        onConfirm={() => {
+          setShowDeleteDialog(false);
+          onDelete(session.id);
+        }}
+      />
+    </>
   );
 }

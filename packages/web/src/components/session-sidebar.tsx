@@ -6,7 +6,9 @@ import { useState, useMemo, useCallback, useEffect, useRef, type TouchEvent } fr
 import { useSession, signOut } from "next-auth/react";
 import useSWR, { mutate } from "swr";
 import { ArchiveSessionDialog } from "@/components/archive-session-dialog";
+import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import { archiveSession } from "@/lib/archive-session";
+import { deleteSession } from "@/lib/delete-session";
 import { formatRelativeTime, isInactiveSession } from "@/lib/time";
 import {
   applyTitleUpdate,
@@ -23,6 +25,7 @@ import {
   SidebarIcon,
   InspectIcon,
   ArchiveIcon,
+  TrashIcon,
   PlusIcon,
   SettingsIcon,
   AutomationsIcon,
@@ -239,6 +242,25 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
     [currentSessionId, router]
   );
 
+  const handleSessionDeleted = useCallback(
+    async (sessionId: string) => {
+      await mutate<SessionListResponse>(
+        SIDEBAR_SESSIONS_KEY,
+        (current) =>
+          current
+            ? { ...current, sessions: removeSessionFromList(current.sessions, sessionId) }
+            : current,
+        { revalidate: false, populateCache: true }
+      );
+      setExtraSessions((prev) => prev.filter((session) => session.id !== sessionId));
+
+      if (currentSessionId === sessionId) {
+        router.push("/");
+      }
+    },
+    [currentSessionId, router]
+  );
+
   const handleNavigationSelect = useCallback(() => {
     if (isMobile) {
       onSessionSelect?.();
@@ -363,6 +385,7 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
                 currentSessionId={currentSessionId}
                 isMobile={isMobile}
                 onArchive={handleSessionArchived}
+                onDelete={handleSessionDeleted}
                 onSessionSelect={onSessionSelect}
                 onSessionRenamed={handleSessionRenamed}
               />
@@ -384,6 +407,7 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
                     currentSessionId={currentSessionId}
                     isMobile={isMobile}
                     onArchive={handleSessionArchived}
+                    onDelete={handleSessionDeleted}
                     onSessionSelect={onSessionSelect}
                     onSessionRenamed={handleSessionRenamed}
                   />
@@ -457,6 +481,7 @@ function SessionWithChildren({
   currentSessionId,
   isMobile,
   onArchive,
+  onDelete,
   onSessionSelect,
   onSessionRenamed,
 }: {
@@ -465,6 +490,7 @@ function SessionWithChildren({
   currentSessionId: string | null;
   isMobile: boolean;
   onArchive: (sessionId: string) => Promise<void>;
+  onDelete: (sessionId: string) => Promise<void>;
   onSessionSelect?: () => void;
   onSessionRenamed: (sessionId: string, title: string) => void;
 }) {
@@ -475,6 +501,7 @@ function SessionWithChildren({
         isActive={session.id === currentSessionId}
         isMobile={isMobile}
         onArchive={onArchive}
+        onDelete={onDelete}
         onSessionSelect={onSessionSelect}
         onSessionRenamed={onSessionRenamed}
       />
@@ -497,6 +524,7 @@ function SessionListItem({
   isActive,
   isMobile,
   onArchive,
+  onDelete,
   onSessionSelect,
   onSessionRenamed,
 }: {
@@ -504,6 +532,7 @@ function SessionListItem({
   isActive: boolean;
   isMobile: boolean;
   onArchive: (sessionId: string) => Promise<void>;
+  onDelete: (sessionId: string) => Promise<void>;
   onSessionSelect?: () => void;
   onSessionRenamed: (sessionId: string, title: string) => void;
 }) {
@@ -517,6 +546,8 @@ function SessionListItem({
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [title, setTitle] = useState(displayTitle);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const isStartingRenameRef = useRef(false);
@@ -556,6 +587,25 @@ function SessionListItem({
   const handleStartArchive = () => {
     setIsActionsOpen(false);
     setShowArchiveDialog(true);
+  };
+
+  const handleStartDelete = () => {
+    setIsActionsOpen(false);
+    setShowDeleteDialog(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    setShowDeleteDialog(false);
+    setIsDeleting(true);
+
+    try {
+      const didDelete = await deleteSession(session.id);
+      if (didDelete) {
+        await onDelete(session.id);
+      }
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleConfirmArchive = async () => {
@@ -761,6 +811,15 @@ function SessionListItem({
                 <ArchiveIcon className="w-4 h-4" />
                 Archive
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={handleStartDelete}
+                disabled={isDeleting}
+                className="text-destructive focus:text-destructive"
+              >
+                <TrashIcon className="w-4 h-4" />
+                Delete
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -770,6 +829,12 @@ function SessionListItem({
         open={showArchiveDialog}
         onOpenChange={setShowArchiveDialog}
         onConfirm={handleConfirmArchive}
+      />
+
+      <DeleteSessionDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        onConfirm={handleConfirmDelete}
       />
     </>
   );
