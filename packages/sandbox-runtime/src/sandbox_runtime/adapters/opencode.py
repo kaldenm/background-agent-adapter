@@ -13,7 +13,7 @@ import tempfile
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import httpx
 
@@ -173,7 +173,7 @@ class OpenCodeAdapter(AgentAdapter):
     # Supervisor process methods (agent lifecycle)
     # ─────────────────────────────────────────────────────────────────────
 
-    async def install(self, workdir: Path, session_config: dict) -> None:
+    async def install(self, workdir: Path, session_config: dict[str, Any]) -> None:
         """Install tools, skills, plugins, and MCP packages."""
         self._install_tools(workdir)
         self._install_skills(workdir)
@@ -193,7 +193,7 @@ class OpenCodeAdapter(AgentAdapter):
         if mcp_servers:
             await self._install_mcp_packages(mcp_servers)
 
-    async def prepare(self, workdir: Path, session_config: dict) -> None:
+    async def prepare(self, workdir: Path, session_config: dict[str, Any]) -> None:
         """Launch OpenCode server with configuration. Blocks until healthy."""
         self._setup_openai_oauth()
         self.log.info("opencode.start")
@@ -201,7 +201,7 @@ class OpenCodeAdapter(AgentAdapter):
         # Build OpenCode config
         provider = session_config.get("provider", "anthropic")
         model = session_config.get("model", "claude-sonnet-4-6")
-        opencode_config: dict = {
+        opencode_config: dict[str, Any] = {
             "model": f"{provider}/{model}",
             "permission": {"*": {"*": "allow"}},
         }
@@ -279,7 +279,9 @@ class OpenCodeAdapter(AgentAdapter):
         if raw:
             try:
                 value = float(raw)
-                value = max(self.SSE_INACTIVITY_TIMEOUT_MIN, min(value, self.SSE_INACTIVITY_TIMEOUT_MAX))
+                value = max(
+                    self.SSE_INACTIVITY_TIMEOUT_MIN, min(value, self.SSE_INACTIVITY_TIMEOUT_MAX)
+                )
                 self._sse_inactivity_timeout = value
             except ValueError:
                 pass
@@ -297,7 +299,7 @@ class OpenCodeAdapter(AgentAdapter):
         resp.raise_for_status()
         data = resp.json()
 
-        session_id = data.get("id")
+        session_id = cast("str", data.get("id"))
         self._session_id = session_id
         self.log.info(
             "opencode.session.ensure",
@@ -480,15 +482,11 @@ class OpenCodeAdapter(AgentAdapter):
                                     )
                                 continue
 
-                            event_session_id = props.get("sessionID") or props.get(
-                                "part", {}
-                            ).get("sessionID")
+                            event_session_id = props.get("sessionID") or props.get("part", {}).get(
+                                "sessionID"
+                            )
                             is_child = event_session_id in tracked_child_session_ids
-                            if (
-                                not event_session_id
-                                or event_session_id == session_id
-                                or is_child
-                            ):
+                            if not event_session_id or event_session_id == session_id or is_child:
                                 if event_type == "message.updated":
                                     info = props.get("info", {})
                                     msg_session_id = info.get("sessionID")
@@ -512,17 +510,14 @@ class OpenCodeAdapter(AgentAdapter):
 
                                         if role == "assistant" and oc_msg_id:
                                             if parent_matches or (
-                                                compaction_occurred
-                                                and not is_compaction_summary
+                                                compaction_occurred and not is_compaction_summary
                                             ):
                                                 allowed_assistant_msg_ids.add(oc_msg_id)
                                                 pending = pending_parts.pop(oc_msg_id, [])
                                                 if pending:
                                                     pending_parts_total -= len(pending)
                                                     for part, delta in pending:
-                                                        for part_event in handle_part(
-                                                            part, delta
-                                                        ):
+                                                        for part_event in handle_part(part, delta):
                                                             yield part_event
 
                                         if finish and finish not in ("tool-calls", ""):
@@ -552,20 +547,14 @@ class OpenCodeAdapter(AgentAdapter):
                                     part_session_id = part.get("sessionID", "")
 
                                     # Discover child sessions from task tool metadata
-                                    if (
-                                        part.get("tool") == "task"
-                                        and part_session_id == session_id
-                                    ):
+                                    if part.get("tool") == "task" and part_session_id == session_id:
                                         metadata = part.get("metadata")
                                         child_sid = (
                                             metadata.get("sessionId")
                                             if isinstance(metadata, dict)
                                             else None
                                         )
-                                        if (
-                                            child_sid
-                                            and child_sid not in tracked_child_session_ids
-                                        ):
+                                        if child_sid and child_sid not in tracked_child_session_ids:
                                             tracked_child_session_ids.add(child_sid)
                                             self.log.info(
                                                 "bridge.child_session_detected",
@@ -575,9 +564,7 @@ class OpenCodeAdapter(AgentAdapter):
 
                                     if oc_msg_id in allowed_assistant_msg_ids:
                                         if part_session_id in tracked_child_session_ids:
-                                            for ev in handle_part(
-                                                part, delta, is_subtask=True
-                                            ):
+                                            for ev in handle_part(part, delta, is_subtask=True):
                                                 yield ev
                                         else:
                                             for part_event in handle_part(part, delta):
@@ -633,9 +620,7 @@ class OpenCodeAdapter(AgentAdapter):
                                         error_msg = self._extract_error_message(
                                             props.get("error", {})
                                         )
-                                        self.log.error(
-                                            "bridge.session_error", error_msg=error_msg
-                                        )
+                                        self.log.error("bridge.session_error", error_msg=error_msg)
                                         yield {
                                             "type": "error",
                                             "error": error_msg or "Unknown error",
@@ -675,7 +660,9 @@ class OpenCodeAdapter(AgentAdapter):
                                 elapsed_ms=int(elapsed * 1000),
                                 message_id=message_id,
                             )
-                            await self._request_stop(session_id, reason="prompt_max_duration_timeout")
+                            await self._request_stop(
+                                session_id, reason="prompt_max_duration_timeout"
+                            )
                             async for final_event in self._fetch_final_message_state(
                                 message_id,
                                 opencode_message_id,
@@ -933,7 +920,7 @@ class OpenCodeAdapter(AgentAdapter):
         if installed_any:
             self.log.info("opencode.skills_installed", skills_path=str(skills_dest))
 
-    async def _install_mcp_packages(self, servers: list[dict]) -> None:
+    async def _install_mcp_packages(self, servers: list[dict[str, Any]]) -> None:
         """Pre-install npm packages for local MCP servers that use npx."""
         packages: list[str] = []
         for server in servers:
@@ -1000,15 +987,15 @@ class OpenCodeAdapter(AgentAdapter):
         except Exception as e:
             self.log.warn("mcp.packages_install_error", packages=packages, exc=str(e))
 
-    def _build_mcp_config(self, servers: list[dict]) -> dict[str, dict]:
+    def _build_mcp_config(self, servers: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         """Convert MCP server list to OpenCode mcp config format."""
-        config: dict[str, dict] = {}
+        config: dict[str, dict[str, Any]] = {}
         for server in servers:
             name = server.get("name", "")
             if not name:
                 continue
             if server.get("type") == "remote":
-                entry: dict = {"type": "remote", "url": server.get("url", "")}
+                entry: dict[str, Any] = {"type": "remote", "url": server.get("url", "")}
                 auth_headers = server.get("headers") or server.get("env") or {}
                 if auth_headers:
                     entry["headers"] = auth_headers

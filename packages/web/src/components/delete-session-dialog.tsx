@@ -25,15 +25,20 @@ export function DeleteSessionDialog({ open, onOpenChange, onConfirm }: DeleteSes
           <AlertDialogTitle>Delete session permanently?</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-3">
-              <p>This will permanently delete this session and <strong>destroy its sandbox</strong>, freeing disk space on Daytona.</p>
+              <p>
+                This will permanently delete this session from the app. If a Daytona sandbox is
+                attached, the server will attempt to clean it up.
+              </p>
               <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm">
                 <p className="font-medium text-destructive">This cannot be undone.</p>
                 <p className="mt-1 text-muted-foreground">
-                  All session data, conversation history, and the running sandbox will be permanently removed.
+                  Session data and conversation history will be removed. Sandbox cleanup is
+                  best-effort when the provider supports it.
                 </p>
               </div>
               <p className="text-xs text-muted-foreground">
-                Looking to just hide it? Use <strong>Archive</strong> instead — it keeps the sandbox alive so you can resume later.
+                Looking to just hide it? Use <strong>Archive</strong> instead so you can resume
+                later.
               </p>
             </div>
           </AlertDialogDescription>

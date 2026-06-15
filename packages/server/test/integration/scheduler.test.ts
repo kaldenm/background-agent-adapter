@@ -12,6 +12,17 @@ function getSchedulerStub() {
   return env.SCHEDULER.get(id);
 }
 
+async function schedulerFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await getSchedulerStub().fetch(input, init);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("invalidating this Durable Object")) {
+      return getSchedulerStub().fetch(input, init);
+    }
+    throw error;
+  }
+}
+
 function makeAutomation(overrides?: Partial<AutomationRow>): AutomationRow {
   const now = Date.now();
   return {
@@ -73,8 +84,7 @@ describe("SchedulerDO (integration)", () => {
       await store.create(makeAutomation({ id: "auto-h1", next_run_at: now - 60000, enabled: 1 }));
       await store.create(makeAutomation({ id: "auto-h2", next_run_at: now + 60000, enabled: 1 }));
 
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/health", { method: "GET" });
+      const res = await schedulerFetch("http://internal/internal/health", { method: "GET" });
 
       expect(res.status).toBe(200);
       const body = await res.json<{ status: string; overdueCount: number }>();
@@ -83,8 +93,7 @@ describe("SchedulerDO (integration)", () => {
     });
 
     it("returns zero overdue when none are due", async () => {
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/health", { method: "GET" });
+      const res = await schedulerFetch("http://internal/internal/health", { method: "GET" });
 
       expect(res.status).toBe(200);
       const body = await res.json<{ status: string; overdueCount: number }>();
@@ -109,8 +118,7 @@ describe("SchedulerDO (integration)", () => {
         })
       );
 
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/run-complete", {
+      const res = await schedulerFetch("http://internal/internal/run-complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -149,8 +157,7 @@ describe("SchedulerDO (integration)", () => {
         })
       );
 
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/run-complete", {
+      const res = await schedulerFetch("http://internal/internal/run-complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -193,8 +200,7 @@ describe("SchedulerDO (integration)", () => {
         })
       );
 
-      const stub = getSchedulerStub();
-      await stub.fetch("http://internal/internal/run-complete", {
+      await schedulerFetch("http://internal/internal/run-complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -226,8 +232,7 @@ describe("SchedulerDO (integration)", () => {
         })
       );
 
-      const stub = getSchedulerStub();
-      await stub.fetch("http://internal/internal/run-complete", {
+      await schedulerFetch("http://internal/internal/run-complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -249,8 +254,7 @@ describe("SchedulerDO (integration)", () => {
 
   describe("/internal/tick", () => {
     it("returns empty tick summary when nothing to process", async () => {
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/tick", { method: "POST" });
+      const res = await schedulerFetch("http://internal/internal/tick", { method: "POST" });
 
       expect(res.status).toBe(200);
       const body = await res.json<{ processed: number; skipped: number; failed: number }>();
@@ -277,8 +281,7 @@ describe("SchedulerDO (integration)", () => {
         })
       );
 
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/tick", { method: "POST" });
+      const res = await schedulerFetch("http://internal/internal/tick", { method: "POST" });
       expect(res.status).toBe(200);
 
       // Verify orphaned run was recovered
@@ -311,8 +314,7 @@ describe("SchedulerDO (integration)", () => {
         })
       );
 
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/tick", { method: "POST" });
+      const res = await schedulerFetch("http://internal/internal/tick", { method: "POST" });
       expect(res.status).toBe(200);
 
       const run = await store.getRunById("auto-t2", "run-timeout-t2");
@@ -338,8 +340,7 @@ describe("SchedulerDO (integration)", () => {
         })
       );
 
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/tick", { method: "POST" });
+      const res = await schedulerFetch("http://internal/internal/tick", { method: "POST" });
       expect(res.status).toBe(200);
 
       const body = await res.json<{ processed: number; skipped: number; failed: number }>();
@@ -364,8 +365,7 @@ describe("SchedulerDO (integration)", () => {
       });
       await store.create(overdue);
 
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/tick", { method: "POST" });
+      const res = await schedulerFetch("http://internal/internal/tick", { method: "POST" });
       expect(res.status).toBe(200);
 
       const body = await res.json<{ processed: number; skipped: number; failed: number }>();
@@ -406,8 +406,7 @@ describe("SchedulerDO (integration)", () => {
         })
       );
 
-      const stub = getSchedulerStub();
-      await stub.fetch("http://internal/internal/tick", { method: "POST" });
+      await schedulerFetch("http://internal/internal/tick", { method: "POST" });
 
       const automation = await store.getById("auto-t5");
       expect(automation!.consecutive_failures).toBe(3);
@@ -420,8 +419,7 @@ describe("SchedulerDO (integration)", () => {
 
   describe("/internal/trigger", () => {
     it("returns 400 when automationId is missing", async () => {
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/trigger", {
+      const res = await schedulerFetch("http://internal/internal/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -430,8 +428,7 @@ describe("SchedulerDO (integration)", () => {
     });
 
     it("returns 404 when automation not found", async () => {
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/trigger", {
+      const res = await schedulerFetch("http://internal/internal/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ automationId: "nonexistent" }),
@@ -453,8 +450,7 @@ describe("SchedulerDO (integration)", () => {
         })
       );
 
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/trigger", {
+      const res = await schedulerFetch("http://internal/internal/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ automationId: "auto-trig1" }),
@@ -466,8 +462,7 @@ describe("SchedulerDO (integration)", () => {
       const store = new AutomationStore(env.DB);
       await store.create(makeAutomation({ id: "auto-trig2" }));
 
-      const stub = getSchedulerStub();
-      const res = await stub.fetch("http://internal/internal/trigger", {
+      const res = await schedulerFetch("http://internal/internal/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ automationId: "auto-trig2" }),
@@ -485,8 +480,7 @@ describe("SchedulerDO (integration)", () => {
   // ─── Unknown routes ────────────────────────────────────────────────────────
 
   it("returns 404 for unknown routes", async () => {
-    const stub = getSchedulerStub();
-    const res = await stub.fetch("http://internal/unknown", { method: "GET" });
+    const res = await schedulerFetch("http://internal/unknown", { method: "GET" });
     expect(res.status).toBe(404);
   });
 });

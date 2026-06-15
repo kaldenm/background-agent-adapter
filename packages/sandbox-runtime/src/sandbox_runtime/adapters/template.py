@@ -13,14 +13,18 @@ Quick start:
     5. Redeploy the sandbox image
 """
 
-import asyncio
-from collections.abc import AsyncIterator
-from pathlib import Path
-from typing import Any
+from __future__ import annotations
 
-import httpx
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from .base import AgentAdapter
+
+if TYPE_CHECKING:
+    import asyncio
+    from collections.abc import AsyncIterator
+
+    import httpx
 
 
 class TemplateAdapter(AgentAdapter):
@@ -51,7 +55,7 @@ class TemplateAdapter(AgentAdapter):
     #   install() → prepare() → [agent runs] → shutdown()
     # ─────────────────────────────────────────────────────────────────────
 
-    async def install(self, workdir: Path, session_config: dict) -> None:
+    async def install(self, workdir: Path, session_config: dict[str, Any]) -> None:
         """One-time setup after git clone, before the agent starts.
 
         Typical work:
@@ -66,7 +70,7 @@ class TemplateAdapter(AgentAdapter):
         # TODO: Write any config files your agent needs.
         raise NotImplementedError
 
-    async def prepare(self, workdir: Path, session_config: dict) -> None:
+    async def prepare(self, workdir: Path, session_config: dict[str, Any]) -> None:
         """Start the agent or verify it's ready for the bridge to connect.
 
         Server agents: Spawn the server process here, wait until it's healthy.
@@ -80,7 +84,7 @@ class TemplateAdapter(AgentAdapter):
         # TODO: Start your agent or validate its binary.
         raise NotImplementedError
 
-    def get_process(self) -> "asyncio.subprocess.Process | None":
+    def get_process(self) -> asyncio.subprocess.Process | None:
         """Return the subprocess handle for crash detection.
 
         The supervisor's monitor_processes() loop checks this to detect crashes.
@@ -216,7 +220,7 @@ class TemplateAdapter(AgentAdapter):
         #
         raise NotImplementedError
         # Make this an async generator:
-        yield  # noqa: unreachable — ensures Python treats this as AsyncIterator
+        yield  # Ensures Python treats this as AsyncIterator.
 
     async def stop(self, session_id: str) -> None:
         """Cancel current execution.

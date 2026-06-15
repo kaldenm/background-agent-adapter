@@ -18,7 +18,6 @@ import re
 import secrets
 import subprocess
 import time
-from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -136,6 +135,7 @@ class AgentBridge:
 
         if adapter is None:
             from .adapters.opencode import OpenCodeAdapter
+
             adapter = OpenCodeAdapter()
         self.adapter = adapter
 
@@ -548,6 +548,8 @@ class AgentBridge:
         Catches malformed events from adapters before they reach the control plane.
         """
         event_type = event.get("type")
+        if not isinstance(event_type, str):
+            raise ValueError("Adapter emitted event missing string type")
         required = REQUIRED_EVENT_FIELDS.get(event_type)
         if required:
             missing = [f for f in required if f not in event]
@@ -595,16 +597,15 @@ class AgentBridge:
             # OpenCode SSE parsing.
             had_error = False
             error_message = None
-            # Send prompt to agent and the FOR (loop) each events that comes back 
+            # Send the prompt to the agent and forward each streamed event.
             async for event in self.adapter.send_prompt(
                 self._session_id, content, message_id, model, reasoning_effort
             ):
-                # For each event the agent streams back 
                 self._validate_event(event)
-                if event.get("type") == "error": # Track if anything is wrong  
+                if event.get("type") == "error":
                     had_error = True
                     error_message = event.get("error")
-                await self._send_event(event) # Forward to control plane 
+                await self._send_event(event)
 
             if had_error:
                 outcome = "error"
@@ -612,7 +613,7 @@ class AgentBridge:
             # Sync back rotated Anthropic OAuth token if Pi refreshed it
             await self._sync_back_anthropic_token()
 
-            # Bridge sends final we are done event to control plane after the loop 
+            # Tell the control plane the prompt finished after the stream ends.
             await self._send_event(
                 {
                     "type": "execution_complete",
@@ -621,7 +622,6 @@ class AgentBridge:
                     **({"error": error_message} if error_message else {}),
                 }
             )
-            # Control plane knows we are done know 
         except Exception as e:
             outcome = "error"
             self.log.error("prompt.error", exc=e, message_id=message_id)
@@ -866,10 +866,7 @@ class AgentBridge:
                 anthropic_auth = auth_data.get("anthropic", {})
                 current_refresh = anthropic_auth.get("refresh", "")
 
-                if (
-                    current_refresh
-                    and current_refresh != self._original_anthropic_refresh_token
-                ):
+                if current_refresh and current_refresh != self._original_anthropic_refresh_token:
                     self.log.info(
                         "bridge.anthropic_token_rotated",
                         detail="Pi rotated the Anthropic refresh token, syncing back to D1",
@@ -878,8 +875,7 @@ class AgentBridge:
                     # Build the internal endpoint URL
                     # server_url is the control plane base URL (e.g. https://server.workers.dev)
                     sync_url = (
-                        f"{self.server_url}/sessions/{self.session_id}"
-                        f"/anthropic-token-sync-back"
+                        f"{self.server_url}/sessions/{self.session_id}/anthropic-token-sync-back"
                     )
 
                     if self.http_client:

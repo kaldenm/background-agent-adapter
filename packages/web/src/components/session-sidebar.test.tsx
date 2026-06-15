@@ -14,7 +14,8 @@ const { mockUseIsMobile } = vi.hoisted(() => ({
   mockUseIsMobile: vi.fn(() => false),
 }));
 
-const { mockPush } = vi.hoisted(() => ({
+const { mockPathname, mockPush } = vi.hoisted(() => ({
+  mockPathname: vi.fn(() => "/"),
   mockPush: vi.fn(),
 }));
 
@@ -31,7 +32,7 @@ vi.mock("next-auth/react", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/",
+  usePathname: mockPathname,
   useRouter: () => ({ push: mockPush }),
 }));
 
@@ -47,10 +48,18 @@ vi.mock("@/hooks/use-media-query", () => ({
   useIsMobile: mockUseIsMobile,
 }));
 
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+  },
+}));
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.useRealTimers();
+  mockPathname.mockReturnValue("/");
   mockUseIsMobile.mockReturnValue(false);
   mockPush.mockReset();
 });
@@ -298,5 +307,168 @@ describe("SessionSidebar", () => {
     });
 
     expect(screen.getByRole("link", { name: /session 1/i })).toBeInTheDocument();
+  });
+
+  it("does not delete a session when the delete dialog is cancelled", async () => {
+    mockUseIsMobile.mockReturnValue(true);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <SWRConfig
+        value={{
+          fallback: { [SIDEBAR_SESSIONS_KEY]: { sessions: [createSession(1)], hasMore: false } },
+          dedupingInterval: 0,
+          revalidateOnFocus: false,
+        }}
+      >
+        <SessionSidebar />
+      </SWRConfig>
+    );
+
+    const link = await screen.findByRole("link", { name: /session 1/i });
+    vi.useFakeTimers();
+    fireEvent.touchStart(link, { touches: [{ clientX: 20, clientY: 20 }] });
+    act(() => {
+      vi.advanceTimersByTime(MOBILE_LONG_PRESS_MS);
+    });
+    vi.useRealTimers();
+
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: /session 1/i })).toBeInTheDocument();
+  });
+
+  it("deletes a session from the sidebar actions menu", async () => {
+    mockUseIsMobile.mockReturnValue(true);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/sessions/session-1" && init?.method === "DELETE") {
+        return jsonResponse({ status: "deleted", sessionId: "session-1" });
+      }
+
+      throw new Error(`Unexpected fetch for ${String(input)}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <SWRConfig
+        value={{
+          fallback: { [SIDEBAR_SESSIONS_KEY]: { sessions: [createSession(1)], hasMore: false } },
+          dedupingInterval: 0,
+          revalidateOnFocus: false,
+        }}
+      >
+        <SessionSidebar />
+      </SWRConfig>
+    );
+
+    const link = await screen.findByRole("link", { name: /session 1/i });
+    vi.useFakeTimers();
+    fireEvent.touchStart(link, { touches: [{ clientX: 20, clientY: 20 }] });
+    act(() => {
+      vi.advanceTimersByTime(MOBILE_LONG_PRESS_MS);
+    });
+    vi.useRealTimers();
+
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete permanently" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-1", { method: "DELETE" });
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("link", { name: /session 1/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it("keeps the session in the sidebar when deleting fails", async () => {
+    mockUseIsMobile.mockReturnValue(true);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/sessions/session-1" && init?.method === "DELETE") {
+        return new Response(JSON.stringify({ error: "Failed to delete session" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch for ${String(input)}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <SWRConfig
+        value={{
+          fallback: { [SIDEBAR_SESSIONS_KEY]: { sessions: [createSession(1)], hasMore: false } },
+          dedupingInterval: 0,
+          revalidateOnFocus: false,
+        }}
+      >
+        <SessionSidebar />
+      </SWRConfig>
+    );
+
+    const link = await screen.findByRole("link", { name: /session 1/i });
+    vi.useFakeTimers();
+    fireEvent.touchStart(link, { touches: [{ clientX: 20, clientY: 20 }] });
+    act(() => {
+      vi.advanceTimersByTime(MOBILE_LONG_PRESS_MS);
+    });
+    vi.useRealTimers();
+
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete permanently" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-1", { method: "DELETE" });
+    });
+    expect(screen.getByRole("link", { name: /session 1/i })).toBeInTheDocument();
+  });
+
+  it("navigates home when deleting the current session", async () => {
+    mockPathname.mockReturnValue("/session/session-1");
+    mockUseIsMobile.mockReturnValue(true);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/sessions/session-1" && init?.method === "DELETE") {
+        return jsonResponse({ status: "deleted", sessionId: "session-1" });
+      }
+
+      throw new Error(`Unexpected fetch for ${String(input)}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <SWRConfig
+        value={{
+          fallback: { [SIDEBAR_SESSIONS_KEY]: { sessions: [createSession(1)], hasMore: false } },
+          dedupingInterval: 0,
+          revalidateOnFocus: false,
+        }}
+      >
+        <SessionSidebar />
+      </SWRConfig>
+    );
+
+    const link = await screen.findByRole("link", { name: /session 1/i });
+    vi.useFakeTimers();
+    fireEvent.touchStart(link, { touches: [{ clientX: 20, clientY: 20 }] });
+    act(() => {
+      vi.advanceTimersByTime(MOBILE_LONG_PRESS_MS);
+    });
+    vi.useRealTimers();
+
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete permanently" }));
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith("/");
+    });
   });
 });

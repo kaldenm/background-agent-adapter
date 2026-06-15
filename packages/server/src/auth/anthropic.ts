@@ -32,9 +32,7 @@ export class AnthropicTokenRefreshError extends Error {
  * MUST persist the new `refresh_token` from the response, otherwise the
  * next refresh attempt will fail with 401 (old token revoked).
  */
-export async function refreshAnthropicToken(
-  refreshToken: string
-): Promise<AnthropicTokenResponse> {
+export async function refreshAnthropicToken(refreshToken: string): Promise<AnthropicTokenResponse> {
   const response = await fetch(ANTHROPIC_TOKEN_URL, {
     method: "POST",
     headers: {

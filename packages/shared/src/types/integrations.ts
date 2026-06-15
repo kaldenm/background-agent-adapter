@@ -36,7 +36,7 @@ export interface CodeServerSettings {
   enabled?: boolean;
 }
 
-/** Settings for the Anthropic OAuth integration (Claude Code subscription). */
+/** Settings for the Anthropic integration. */
 export interface AnthropicSettings {
   connected?: boolean;
 }
@@ -121,7 +121,7 @@ export const INTEGRATION_DEFINITIONS: {
   },
   {
     id: "anthropic",
-    name: "Anthropic (Claude Code)",
-    description: "Connect your Claude Code subscription for sandbox AI sessions",
+    name: "Anthropic",
+    description: "Configure Anthropic API access for sandbox AI sessions",
   },
 ];

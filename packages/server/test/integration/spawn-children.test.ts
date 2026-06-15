@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { SELF, env } from "cloudflare:test";
+import { env } from "cloudflare:test";
 import { SessionIndexStore } from "../../src/db/session-index";
 import { cleanD1Tables } from "./cleanup";
-import { initNamedSession, seedSandboxAuth } from "./helpers";
+import { initNamedSession, seedSandboxAuth, selfFetchWithDoInvalidationRetry } from "./helpers";
 
 describe("POST /sessions/:parentId/children — spawn child", () => {
   beforeEach(cleanD1Tables);
@@ -59,17 +59,20 @@ describe("POST /sessions/:parentId/children — spawn child", () => {
       scmLogin: "acmedev",
     });
 
-    const res = await SELF.fetch(`https://test.local/sessions/${parentName}/children`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sandboxToken}`,
-      },
-      body: JSON.stringify({
-        title: "Fix the tests",
-        prompt: "Please fix the failing tests in src/utils.ts",
-      }),
-    });
+    const res = await selfFetchWithDoInvalidationRetry(
+      `https://test.local/sessions/${parentName}/children`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sandboxToken}`,
+        },
+        body: JSON.stringify({
+          title: "Fix the tests",
+          prompt: "Please fix the failing tests in src/utils.ts",
+        }),
+      }
+    );
 
     expect(res.status).toBe(201);
     const body = await res.json<{ sessionId: string; status: string }>();
@@ -97,7 +100,7 @@ describe("POST /sessions/:parentId/children — spawn child", () => {
     expect(state.status).toBe("active");
   });
 
-  it("propagates null userId from parent to child", async () => {
+  it("falls back to the parent owner userId when parent has no canonical userId", async () => {
     const { parentName, sandboxToken, store } = await setupParent({
       repoId: 12345,
       userId: "user-1",
@@ -105,23 +108,26 @@ describe("POST /sessions/:parentId/children — spawn child", () => {
       // canonicalUserId intentionally omitted → null
     });
 
-    const res = await SELF.fetch(`https://test.local/sessions/${parentName}/children`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sandboxToken}`,
-      },
-      body: JSON.stringify({
-        title: "Child without user",
-        prompt: "Parent has no canonical userId",
-      }),
-    });
+    const res = await selfFetchWithDoInvalidationRetry(
+      `https://test.local/sessions/${parentName}/children`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sandboxToken}`,
+        },
+        body: JSON.stringify({
+          title: "Child without user",
+          prompt: "Parent has no canonical userId",
+        }),
+      }
+    );
 
     expect(res.status).toBe(201);
     const body = await res.json<{ sessionId: string }>();
     const child = await store.get(body.sessionId);
     expect(child).not.toBeNull();
-    expect(child!.userId).toBeNull();
+    expect(child!.userId).toBe("user-1");
   });
 
   it("rejects when depth >= 2 (403)", async () => {
@@ -131,17 +137,20 @@ describe("POST /sessions/:parentId/children — spawn child", () => {
       spawnSource: "agent",
     });
 
-    const res = await SELF.fetch(`https://test.local/sessions/${parentName}/children`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sandboxToken}`,
-      },
-      body: JSON.stringify({
-        title: "Too deep",
-        prompt: "This should be rejected",
-      }),
-    });
+    const res = await selfFetchWithDoInvalidationRetry(
+      `https://test.local/sessions/${parentName}/children`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sandboxToken}`,
+        },
+        body: JSON.stringify({
+          title: "Too deep",
+          prompt: "This should be rejected",
+        }),
+      }
+    );
 
     expect(res.status).toBe(403);
     const body = await res.json<{ error: string }>();
@@ -170,17 +179,20 @@ describe("POST /sessions/:parentId/children — spawn child", () => {
       });
     }
 
-    const res = await SELF.fetch(`https://test.local/sessions/${parentName}/children`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sandboxToken}`,
-      },
-      body: JSON.stringify({
-        title: "One too many",
-        prompt: "This should be rate-limited",
-      }),
-    });
+    const res = await selfFetchWithDoInvalidationRetry(
+      `https://test.local/sessions/${parentName}/children`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sandboxToken}`,
+        },
+        body: JSON.stringify({
+          title: "One too many",
+          prompt: "This should be rate-limited",
+        }),
+      }
+    );
 
     expect(res.status).toBe(429);
     const body = await res.json<{ error: string }>();
@@ -209,17 +221,20 @@ describe("POST /sessions/:parentId/children — spawn child", () => {
       });
     }
 
-    const res = await SELF.fetch(`https://test.local/sessions/${parentName}/children`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sandboxToken}`,
-      },
-      body: JSON.stringify({
-        title: "Too many total",
-        prompt: "This should be rate-limited",
-      }),
-    });
+    const res = await selfFetchWithDoInvalidationRetry(
+      `https://test.local/sessions/${parentName}/children`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sandboxToken}`,
+        },
+        body: JSON.stringify({
+          title: "Too many total",
+          prompt: "This should be rate-limited",
+        }),
+      }
+    );
 
     expect(res.status).toBe(429);
     const body = await res.json<{ error: string }>();
@@ -229,19 +244,22 @@ describe("POST /sessions/:parentId/children — spawn child", () => {
   it("rejects cross-repo spawn (403)", async () => {
     const { parentName, sandboxToken } = await setupParent();
 
-    const res = await SELF.fetch(`https://test.local/sessions/${parentName}/children`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sandboxToken}`,
-      },
-      body: JSON.stringify({
-        title: "Cross-repo attempt",
-        prompt: "This should fail",
-        repoOwner: "evil-corp",
-        repoName: "malicious-app",
-      }),
-    });
+    const res = await selfFetchWithDoInvalidationRetry(
+      `https://test.local/sessions/${parentName}/children`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sandboxToken}`,
+        },
+        body: JSON.stringify({
+          title: "Cross-repo attempt",
+          prompt: "This should fail",
+          repoOwner: "evil-corp",
+          repoName: "malicious-app",
+        }),
+      }
+    );
 
     expect(res.status).toBe(403);
     const body = await res.json<{ error: string }>();
@@ -251,18 +269,21 @@ describe("POST /sessions/:parentId/children — spawn child", () => {
   it("rejects invalid model with 400 and helpful message", async () => {
     const { parentName, sandboxToken } = await setupParent();
 
-    const res = await SELF.fetch(`https://test.local/sessions/${parentName}/children`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sandboxToken}`,
-      },
-      body: JSON.stringify({
-        title: "Bad model",
-        prompt: "This should fail",
-        model: "not-a-real-model",
-      }),
-    });
+    const res = await selfFetchWithDoInvalidationRetry(
+      `https://test.local/sessions/${parentName}/children`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sandboxToken}`,
+        },
+        body: JSON.stringify({
+          title: "Bad model",
+          prompt: "This should fail",
+          model: "not-a-real-model",
+        }),
+      }
+    );
 
     expect(res.status).toBe(400);
     const body = await res.json<{ error: string }>();
@@ -271,14 +292,17 @@ describe("POST /sessions/:parentId/children — spawn child", () => {
   });
 
   it("rejects without auth (401)", async () => {
-    const res = await SELF.fetch(`https://test.local/sessions/any-session/children`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: "No auth",
-        prompt: "Should fail",
-      }),
-    });
+    const res = await selfFetchWithDoInvalidationRetry(
+      `https://test.local/sessions/any-session/children`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "No auth",
+          prompt: "Should fail",
+        }),
+      }
+    );
 
     expect(res.status).toBe(401);
   });
@@ -319,11 +343,14 @@ describe("POST /sessions/:parentId/children — spawn child", () => {
       updatedAt: now + 1,
     });
 
-    const res = await SELF.fetch(`https://test.local/sessions/${parentName}/children`, {
-      headers: {
-        Authorization: `Bearer ${sandboxToken}`,
-      },
-    });
+    const res = await selfFetchWithDoInvalidationRetry(
+      `https://test.local/sessions/${parentName}/children`,
+      {
+        headers: {
+          Authorization: `Bearer ${sandboxToken}`,
+        },
+      }
+    );
 
     expect(res.status).toBe(200);
     const body = await res.json<{ children: Array<{ id: string; title: string | null }> }>();

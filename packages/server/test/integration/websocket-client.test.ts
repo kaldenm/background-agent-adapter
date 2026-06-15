@@ -115,7 +115,7 @@ describe("Client WebSocket (via SELF.fetch)", () => {
 
     const { code, reason } = await closed;
     expect(code).toBe(4001);
-    expect(reason).toBe("Token expired");
+    expect(reason).toBe("Invalid or expired token");
   });
 
   it("subscribe includes batched replay with hasMore=false for empty session", async () => {

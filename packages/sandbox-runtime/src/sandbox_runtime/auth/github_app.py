@@ -10,6 +10,7 @@ Tokens are valid for ~1 hour.
 """
 
 import time
+from typing import cast
 
 import httpx
 import jwt
@@ -59,7 +60,7 @@ def get_installation_token(jwt_token: str, installation_id: str) -> str:
     with httpx.Client() as client:
         response = client.post(url, headers=headers)
         response.raise_for_status()
-        return response.json()["token"]
+        return cast("str", response.json()["token"])
 
 
 def generate_installation_token(

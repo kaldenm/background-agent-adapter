@@ -11,6 +11,7 @@ Architecture:
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import shutil
@@ -49,7 +50,7 @@ class PiAdapter(AgentAdapter):
         self._provider: str = "anthropic"
         self._model: str = "claude-sonnet-4-20250514"
         self._session_id: str | None = None
-        self._session_config: dict = {}
+        self._session_config: dict[str, Any] = {}
 
         # Concurrency controls (initialized in configure)
         # Pi sends both streaming events AND command responses on the same stdout pipe.
@@ -67,7 +68,7 @@ class PiAdapter(AgentAdapter):
     # Supervisor process methods (agent lifecycle)
     # ─────────────────────────────────────────────────────────────────────
 
-    async def install(self, workdir: Path, session_config: dict) -> None:
+    async def install(self, workdir: Path, session_config: dict[str, Any]) -> None:
         """Write Pi configuration files and install skills."""
         self._workdir = workdir
         self._session_config = session_config
@@ -86,10 +87,11 @@ class PiAdapter(AgentAdapter):
         }
         (pi_dir / "settings.json").write_text(json.dumps(settings, indent=2))
 
-        # Write OAuth auth.json if refresh token is available (Claude Code subscription)
+        # Write OAuth auth.json only for Claude Code subscription auth.
+        # If an API key is present, Pi should use normal Anthropic API billing.
         self._setup_anthropic_oauth(pi_dir)
 
-        # Install cc-patch extension (required for Claude Code subscription billing)
+        # Install cc-patch extension only for Claude Code subscription billing.
         self._install_cc_patch_extension(workdir)
 
         # Install skills (same SKILL.md format as OpenCode)
@@ -100,7 +102,7 @@ class PiAdapter(AgentAdapter):
 
         self.log.info("pi.install_complete", workdir=str(workdir))
 
-    async def prepare(self, workdir: Path, session_config: dict) -> None:
+    async def prepare(self, workdir: Path, session_config: dict[str, Any]) -> None:
         """Validate Pi binary exists. Does NOT spawn Pi.
 
         Pi is a subprocess agent: the bridge owns the process. Spawning
@@ -114,7 +116,8 @@ class PiAdapter(AgentAdapter):
 
         # Validate binary exists
         result = await asyncio.create_subprocess_exec(
-            "pi", "--version",
+            "pi",
+            "--version",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -151,8 +154,12 @@ class PiAdapter(AgentAdapter):
         stdin/stdout pipes.
         """
         # Read config from environment (bridge is a separate process)
-        self._provider = os.environ.get("PI_PROVIDER", os.environ.get("AGENT_PROVIDER", "anthropic"))
-        self._model = os.environ.get("PI_MODEL", os.environ.get("AGENT_MODEL", "claude-sonnet-4-20250514"))
+        self._provider = os.environ.get(
+            "PI_PROVIDER", os.environ.get("AGENT_PROVIDER", "anthropic")
+        )
+        self._model = os.environ.get(
+            "PI_MODEL", os.environ.get("AGENT_MODEL", "claude-sonnet-4-20250514")
+        )
 
         # Workspace path
         workspace = os.environ.get("WORKSPACE_PATH", "/workspace")
@@ -181,9 +188,7 @@ class PiAdapter(AgentAdapter):
             self._make_status_event("spawning", f"Starting Pi ({self._provider}/{self._model})")
         )
         await self._spawn_pi(session_path=session_path)
-        self._pending_status.append(
-            self._make_status_event("ready", "Pi process ready")
-        )
+        self._pending_status.append(self._make_status_event("ready", "Pi process ready"))
 
     async def create_session(self, repo_path: str) -> str:
         """Create a new session in the running Pi process.
@@ -224,6 +229,7 @@ class PiAdapter(AgentAdapter):
 
         MUST NOT yield execution_complete — the bridge handles that.
         """
+        assert self._response_queue is not None
         # Drain any lifecycle status events queued during configure/spawn.
         # These happened BEFORE the prompt, but configure() doesn't stream events,
         # so this is the first chance to emit them. The user sees
@@ -276,7 +282,11 @@ class PiAdapter(AgentAdapter):
                 yield {"type": "error", "error": error, "messageId": message_id}
                 return
         except TimeoutError:
-            yield {"type": "error", "error": "Pi did not acknowledge prompt", "messageId": message_id}
+            yield {
+                "type": "error",
+                "error": "Pi did not acknowledge prompt",
+                "messageId": message_id,
+            }
             return
 
         # Stream events until agent_end
@@ -292,16 +302,12 @@ class PiAdapter(AgentAdapter):
 
     async def stop(self, session_id: str) -> None:
         """Send abort command to Pi."""
-        try:
+        with contextlib.suppress(BrokenPipeError, OSError):
             await self._write_stdin({"type": "abort"})
-        except (BrokenPipeError, OSError):
-            pass  # Pi already dead
 
     async def health_check(self) -> bool:
         """Check if Pi process is alive."""
-        if not self._process or self._process.returncode is not None:
-            return False
-        return True
+        return bool(self._process and self._process.returncode is None)
 
     async def load_session_id(self) -> str | None:
         """Load persisted session file path."""
@@ -367,7 +373,11 @@ class PiAdapter(AgentAdapter):
         cmd = ["pi", "--mode", "rpc", "--provider", self._provider, "--model", self._model]
 
         # Load cc-patch extension if it was installed (Claude Code subscription)
-        cc_patch_path = self._workdir / ".pi" / "extensions" / "pi-cc-patch" / "index.ts" if self._workdir else None
+        cc_patch_path = (
+            self._workdir / ".pi" / "extensions" / "pi-cc-patch" / "index.ts"
+            if self._workdir
+            else None
+        )
         if cc_patch_path and cc_patch_path.exists():
             cmd.extend(["-e", str(cc_patch_path)])
             self.log.info("pi.cc_patch_loaded")
@@ -430,6 +440,7 @@ class PiAdapter(AgentAdapter):
         if not self._process or not self._process.stdin:
             raise BrokenPipeError("Pi process not running")
 
+        assert self._stdin_lock is not None
         async with self._stdin_lock:
             line = json.dumps(cmd) + "\n"
             self._process.stdin.write(line.encode())
@@ -455,6 +466,7 @@ class PiAdapter(AgentAdapter):
         req_id = f"req-{uuid.uuid4().hex[:8]}"
         cmd_with_id = {**cmd, "id": req_id}
         await self._write_stdin(cmd_with_id)
+        assert self._response_queue is not None
 
         # Wait for response with matching ID
         deadline = asyncio.get_event_loop().time() + self.COMMAND_RESPONSE_TIMEOUT
@@ -463,9 +475,7 @@ class PiAdapter(AgentAdapter):
             if remaining <= 0:
                 raise TimeoutError(f"No response for command {cmd.get('type')} (id={req_id})")
 
-            response = await asyncio.wait_for(
-                self._response_queue.get(), timeout=remaining
-            )
+            response = await asyncio.wait_for(self._response_queue.get(), timeout=remaining)
 
             if response.get("id") == req_id:
                 return response
@@ -486,6 +496,8 @@ class PiAdapter(AgentAdapter):
         if not self._process or not self._process.stdout:
             return
 
+        assert self._response_queue is not None
+        assert self._event_queue is not None
         buffer = ""
         try:
             while True:
@@ -526,10 +538,8 @@ class PiAdapter(AgentAdapter):
                 exit_code = self._process.returncode
                 if exit_code is None:
                     # Process might still be exiting, wait briefly
-                    try:
+                    with contextlib.suppress(TimeoutError):
                         exit_code = await asyncio.wait_for(self._process.wait(), timeout=2.0)
-                    except TimeoutError:
-                        pass
             except Exception:
                 pass
 
@@ -559,6 +569,7 @@ class PiAdapter(AgentAdapter):
     async def _read_agent_events(self, message_id: str) -> AsyncIterator[dict[str, Any]]:
         """Read events from queue until agent_end, translating to bridge format."""
         had_substantive_event = False
+        assert self._event_queue is not None
         while True:
             try:
                 event = await asyncio.wait_for(
@@ -581,7 +592,9 @@ class PiAdapter(AgentAdapter):
                 detail = f"Pi exited (code={exit_code})"
                 if stderr_tail:
                     detail += f"\nstderr: {stderr_tail[:500]}"
-                self.log.error("pi.process_died", exit_code=exit_code, stderr_tail=stderr_tail[:500])
+                self.log.error(
+                    "pi.process_died", exit_code=exit_code, stderr_tail=stderr_tail[:500]
+                )
                 yield self._make_status_event("crashed", detail)
                 yield {
                     "type": "error",
@@ -608,7 +621,9 @@ class PiAdapter(AgentAdapter):
                     had_substantive_event = True
                 yield bridge_event
 
-    def _convert_pi_event_to_standard(self, event: dict[str, Any], message_id: str) -> dict[str, Any] | None:
+    def _convert_pi_event_to_standard(
+        self, event: dict[str, Any], message_id: str
+    ) -> dict[str, Any] | None:
         """Convert a Pi-native event to a standard bridge event (or None to drop).
 
         Pi emits ~15 event types. The control plane only understands 5.
@@ -702,7 +717,9 @@ class PiAdapter(AgentAdapter):
         # compaction_start, compaction_end, auto_retry_start, extension_error
         return None
 
-    def _translate_message_update(self, event: dict[str, Any], message_id: str) -> dict[str, Any] | None:
+    def _translate_message_update(
+        self, event: dict[str, Any], message_id: str
+    ) -> dict[str, Any] | None:
         """Translate message_update events (streaming text/thinking/tool deltas)."""
         ame = event.get("assistantMessageEvent", {})
         delta_type = ame.get("type")
@@ -753,10 +770,8 @@ class PiAdapter(AgentAdapter):
             # Unknown method — cancel to unblock
             response = {"type": "extension_ui_response", "id": req_id, "cancelled": True}
 
-        try:
+        with contextlib.suppress(BrokenPipeError, OSError):
             await self._write_stdin(response)
-        except (BrokenPipeError, OSError):
-            pass  # Pi already dead
 
     # ─────────────────────────────────────────────────────────────────────
     # Internal: Helpers
@@ -804,7 +819,13 @@ class PiAdapter(AgentAdapter):
         in _spawn_pi(), not via settings.json (which uses a different format
         that crashes Pi's package manager).
         """
-        refresh_token = os.environ.get("ANTHROPIC_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_OAUTH_REFRESH_TOKEN")
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            self.log.info("pi.cc_patch_skipped_api_key")
+            return
+
+        refresh_token = os.environ.get("ANTHROPIC_OAUTH_TOKEN") or os.environ.get(
+            "ANTHROPIC_OAUTH_REFRESH_TOKEN"
+        )
         if not refresh_token:
             return  # Only needed when using OAuth subscription
 
@@ -831,7 +852,13 @@ class PiAdapter(AgentAdapter):
         Pi reads auth from ~/.pi/agent/auth.json (global), not the project
         .pi/ directory. We write to both locations for safety.
         """
-        refresh_token = os.environ.get("ANTHROPIC_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_OAUTH_REFRESH_TOKEN")
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            self.log.info("pi.anthropic_oauth_skipped_api_key")
+            return
+
+        refresh_token = os.environ.get("ANTHROPIC_OAUTH_TOKEN") or os.environ.get(
+            "ANTHROPIC_OAUTH_REFRESH_TOKEN"
+        )
         if not refresh_token:
             return
 

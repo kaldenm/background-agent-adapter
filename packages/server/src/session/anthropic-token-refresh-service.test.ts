@@ -372,7 +372,8 @@ describe("AnthropicTokenRefreshService", () => {
     expect(result).toEqual({
       ok: false,
       status: 401,
-      error: "Anthropic token refresh failed: unauthorized. The Claude integration may need to be re-linked.",
+      error:
+        "Anthropic token refresh failed: unauthorized. The Claude integration may need to be re-linked.",
     });
   });
 });

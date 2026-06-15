@@ -24,12 +24,12 @@ describe("GET /internal/state", () => {
   });
 
   it("state reflects custom model", async () => {
-    const { stub } = await initSession({ model: "anthropic/claude-sonnet-4-5" });
+    const { stub } = await initSession({ model: "anthropic/claude-sonnet-4-6" });
 
     const res = await stub.fetch("http://internal/internal/state");
     const state = await res.json<{ model: string }>();
 
-    expect(state.model).toBe("anthropic/claude-sonnet-4-5");
+    expect(state.model).toBe("anthropic/claude-sonnet-4-6");
   });
 });
 

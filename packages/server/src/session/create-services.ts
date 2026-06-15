@@ -144,6 +144,7 @@ export interface SessionServices {
 
 export function createServices(deps: SessionCoreDeps): SessionServices {
   const { ctx, env, log, repository } = deps;
+  const servicesRef = {} as SessionServices;
 
   // ── Layer 0: Leaf services (no service deps) ────────────────────────
 
@@ -373,7 +374,7 @@ export function createServices(deps: SessionCoreDeps): SessionServices {
     createPullRequest: async (input) => {
       const pullRequestService = new SessionPullRequestService({
         repository,
-        sourceControlProvider,
+        sourceControlProvider: servicesRef.sourceControlProvider,
         log,
         generateId: () => generateId(),
         pushBranchToRemote: (headBranch, pushSpec) => deps.pushBranchToRemote(headBranch, pushSpec),
@@ -400,7 +401,7 @@ export function createServices(deps: SessionCoreDeps): SessionServices {
     getSandbox: () => deps.getSandbox(),
   });
 
-  return {
+  Object.assign(servicesRef, {
     wsManager,
     lifecycleManager,
     sourceControlProvider,
@@ -420,7 +421,9 @@ export function createServices(deps: SessionCoreDeps): SessionServices {
     sessionServer,
     sandboxEventProcessor,
     executionTimeoutMs,
-  };
+  });
+
+  return servicesRef;
 }
 
 // ─── Lifecycle manager factory (large, kept separate for readability) ──
@@ -445,6 +448,7 @@ function createLifecycleManager(
           const daytonaClient = createDaytonaRestClient({
             apiUrl: env.DAYTONA_API_URL,
             apiKey: env.DAYTONA_API_KEY,
+            organizationId: env.DAYTONA_ORGANIZATION_ID,
             target: env.DAYTONA_TARGET,
             baseSnapshot: env.DAYTONA_BASE_SNAPSHOT,
             autoStopIntervalMinutes: parseInt(env.DAYTONA_AUTO_STOP_INTERVAL_MINUTES || "120", 10),

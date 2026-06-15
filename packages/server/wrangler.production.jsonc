@@ -1,4 +1,4 @@
-// Production deployment config — use: npx wrangler deploy -c wrangler.production.jsonc
+// Production deployment config — use from repo root: npm run deploy:server
 {
   "name": "open-inspect-control-plane-aldenmyers",
   "main": "src/index.ts",
@@ -10,6 +10,7 @@
       { "name": "SCHEDULER", "class_name": "SchedulerDO" },
     ],
   },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SessionDO", "SchedulerDO"] }],
   "d1_databases": [
     {
       "binding": "DB",
@@ -23,11 +24,12 @@
   },
   "vars": {
     "GITHUB_CLIENT_ID": "Iv23li9vud1CCu9KNzLN",
-    "WEB_APP_URL": "http://localhost:3000",
+    "WEB_APP_URL": "https://open-inspect-web-aldenmyers.kaldenmyers.workers.dev",
     "WORKER_URL": "https://open-inspect-control-plane-aldenmyers.kaldenmyers.workers.dev",
     "DEPLOYMENT_NAME": "aldenmyers",
     "SANDBOX_PROVIDER": "daytona",
     "DAYTONA_API_URL": "https://app.daytona.io/api",
     "DAYTONA_BASE_SNAPSHOT": "open-inspect-base-v16",
+    "DAYTONA_TARGET": "us",
   },
 }

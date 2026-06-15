@@ -192,6 +192,7 @@ function SessionPageContent() {
     replaying,
     authError,
     connectionError,
+    sandboxError,
     sessionState,
     events,
     participants,
@@ -368,6 +369,7 @@ function SessionPageContent() {
       replaying={replaying}
       authError={authError}
       connectionError={connectionError}
+      sandboxError={sandboxError}
       reconnect={reconnect}
       participants={participants}
       events={events}
@@ -406,6 +408,7 @@ function SessionContent({
   replaying,
   authError,
   connectionError,
+  sandboxError,
   reconnect,
   participants,
   events,
@@ -440,6 +443,7 @@ function SessionContent({
   replaying: boolean;
   authError: string | null;
   connectionError: string | null;
+  sandboxError: string | null;
   reconnect: () => void;
   participants: ReturnType<typeof useSessionSocket>["participants"];
   events: ReturnType<typeof useSessionSocket>["events"];
@@ -807,6 +811,13 @@ function SessionContent({
           >
             Reconnect
           </button>
+        </div>
+      )}
+
+      {sandboxError && (
+        <div className="bg-destructive-muted border-b border-destructive-border px-4 py-3">
+          <p className="text-sm font-medium text-destructive">Sandbox creation failed</p>
+          <p className="mt-1 text-xs text-destructive/80">{sandboxError}</p>
         </div>
       )}
 

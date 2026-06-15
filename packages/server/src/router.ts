@@ -1098,7 +1098,7 @@ async function handleGetSession(
 }
 
 async function handleDeleteSession(
-  request: Request,
+  _request: Request,
   env: Env,
   match: RegExpMatchArray,
   ctx: RequestContext
@@ -1106,42 +1106,33 @@ async function handleDeleteSession(
   const sessionId = match.groups?.id;
   if (!sessionId) return error("Session ID required");
 
-  // 1. Cancel the session (stops execution + sandbox) via the DO
+  const sandboxCleanup: {
+    provider: "daytona" | null;
+    status: "not_configured" | "not_found" | "deleted" | "failed";
+    deletedIds: string[];
+    error?: string;
+  } = {
+    provider: null,
+    status: "not_configured",
+    deletedIds: [],
+  };
+
+  // 1. Ask the session DO to cancel execution before deleting the index record.
   try {
     const doId = env.SESSION.idFromName(sessionId);
     const stub = env.SESSION.get(doId);
 
-    // Get session state to find the Daytona sandbox ID before cancelling
-    const stateResponse = await stub.fetch(
-      internalRequest(
-        buildSessionInternalUrl(SessionInternalPaths.state),
-        { method: "GET" },
-        ctx
+    await stub
+      .fetch(
+        internalRequest(
+          buildSessionInternalUrl(SessionInternalPaths.cancel),
+          { method: "POST" },
+          ctx
+        )
       )
-    );
-
-    let daytona_provider_object_id: string | null = null;
-    if (stateResponse.ok) {
-      try {
-        const state = (await stateResponse.json()) as Record<string, unknown>;
-        // The provider object ID (Daytona UUID) is on the sandbox row
-        // We need to get it from a new internal endpoint or parse from state
-        daytona_provider_object_id = (state as any)._sandbox_provider_object_id ?? null;
-      } catch {
-        // Ignore parse errors
-      }
-    }
-
-    // Cancel the session (stops execution, shuts down sandbox)
-    await stub.fetch(
-      internalRequest(
-        buildSessionInternalUrl(SessionInternalPaths.cancel),
-        { method: "POST" },
-        ctx
-      )
-    ).catch(() => {
-      // Session might already be cancelled/completed — that's fine
-    });
+      .catch(() => {
+        // Session might already be cancelled/completed — that's fine
+      });
   } catch (e) {
     logger.warn("delete_session.cancel_failed", {
       session_id: sessionId,
@@ -1150,46 +1141,64 @@ async function handleDeleteSession(
     // Continue with deletion even if cancel fails
   }
 
-  // 2. Delete the Daytona sandbox if SANDBOX_PROVIDER is daytona
+  // 2. Best-effort Daytona sandbox cleanup. The D1 index delete still proceeds if cleanup fails.
   if (env.SANDBOX_PROVIDER === "daytona" && env.DAYTONA_API_URL && env.DAYTONA_API_KEY) {
+    sandboxCleanup.provider = "daytona";
+    sandboxCleanup.status = "not_found";
+    const daytonaHeaders: Record<string, string> = {
+      Authorization: `Bearer ${env.DAYTONA_API_KEY}`,
+    };
+    if (env.DAYTONA_ORGANIZATION_ID) {
+      daytonaHeaders["X-Daytona-Organization-ID"] = env.DAYTONA_ORGANIZATION_ID;
+    }
+
     try {
-      // List sandboxes with the session label to find the right one
       const listResponse = await fetch(`${env.DAYTONA_API_URL}/sandbox`, {
-        headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}` },
+        headers: daytonaHeaders,
       });
 
-      if (listResponse.ok) {
-        const data = (await listResponse.json()) as {
-          items?: Array<{ id: string; labels?: Record<string, string> }>;
-        };
-        const sandboxes = data.items ?? [];
+      if (!listResponse.ok) {
+        throw new Error(`Failed to list Daytona sandboxes: ${listResponse.status}`);
+      }
 
-        // Find sandboxes matching this session
-        const matching = sandboxes.filter(
-          (s) => s.labels?.openinspect_session_id === sessionId
-        );
+      const data = (await listResponse.json()) as {
+        items?: Array<{ id: string; labels?: Record<string, string> }>;
+      };
+      const sandboxes = data.items ?? [];
 
-        for (const sandbox of matching) {
-          const deleteResponse = await fetch(
-            `${env.DAYTONA_API_URL}/sandbox/${sandbox.id}`,
-            {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}` },
-            }
+      const matching = sandboxes.filter((s) => s.labels?.openinspect_session_id === sessionId);
+
+      for (const sandbox of matching) {
+        const deleteResponse = await fetch(`${env.DAYTONA_API_URL}/sandbox/${sandbox.id}`, {
+          method: "DELETE",
+          headers: daytonaHeaders,
+        });
+
+        logger.info("delete_session.sandbox_deleted", {
+          session_id: sessionId,
+          daytona_sandbox_id: sandbox.id,
+          status: deleteResponse.status,
+        });
+
+        if (!deleteResponse.ok) {
+          throw new Error(
+            `Failed to delete Daytona sandbox ${sandbox.id}: ${deleteResponse.status}`
           );
-          logger.info("delete_session.sandbox_deleted", {
-            session_id: sessionId,
-            daytona_sandbox_id: sandbox.id,
-            status: deleteResponse.status,
-          });
         }
+
+        sandboxCleanup.deletedIds.push(sandbox.id);
+      }
+
+      if (sandboxCleanup.deletedIds.length > 0) {
+        sandboxCleanup.status = "deleted";
       }
     } catch (e) {
+      sandboxCleanup.status = "failed";
+      sandboxCleanup.error = e instanceof Error ? e.message : String(e);
       logger.warn("delete_session.sandbox_cleanup_failed", {
         session_id: sessionId,
-        error: e instanceof Error ? e.message : String(e),
+        error: sandboxCleanup.error,
       });
-      // Continue with D1 deletion even if Daytona cleanup fails
     }
   }
 
@@ -1197,7 +1206,7 @@ async function handleDeleteSession(
   const sessionStore = new SessionIndexStore(env.DB);
   await sessionStore.delete(sessionId);
 
-  return json({ status: "deleted", sessionId });
+  return json({ status: "deleted", sessionId, sandboxCleanup });
 }
 
 async function handleSessionPrompt(

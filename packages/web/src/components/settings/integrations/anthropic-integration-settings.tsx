@@ -56,7 +56,8 @@ type FlowState =
 export function AnthropicIntegrationSettings() {
   const { data, isLoading } = useSWR<SecretsResponse>("/api/secrets");
 
-  const isConnected = data?.secrets?.some((s) => s.key === "ANTHROPIC_OAUTH_TOKEN") ?? false;
+  const hasApiKey = data?.secrets?.some((s) => s.key === "ANTHROPIC_API_KEY") ?? false;
+  const hasOAuthToken = data?.secrets?.some((s) => s.key === "ANTHROPIC_OAUTH_TOKEN") ?? false;
 
   if (isLoading) {
     return <IntegrationSettingsSkeleton />;
@@ -64,18 +65,37 @@ export function AnthropicIntegrationSettings() {
 
   return (
     <div>
-      <h3 className="text-lg font-semibold text-foreground mb-1">Anthropic (Claude Code)</h3>
+      <h3 className="text-lg font-semibold text-foreground mb-1">Anthropic</h3>
       <p className="text-sm text-muted-foreground mb-6">
-        Connect your Claude Code subscription to use it for AI sessions in the sandbox. Each
-        connection gets its own independent credentials.
+        Use an Anthropic API key for sandbox AI sessions. Claude Code OAuth remains available for
+        subscription-based setups.
       </p>
 
-      <Section
-        title="Connection"
-        description="Connect your Claude Code subscription to use it in sandbox sessions."
-      >
-        {isConnected ? <ConnectedState /> : <ConnectFlow />}
-      </Section>
+      <div className="space-y-6">
+        <Section title="API Key" description="Preferred for direct Anthropic API billing.">
+          {hasApiKey ? (
+            <ConnectedState label="API key connected" secretKey="ANTHROPIC_API_KEY" />
+          ) : (
+            <ApiKeyForm />
+          )}
+        </Section>
+
+        <details className="rounded border border-border-muted p-4">
+          <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
+            Advanced: Claude Code OAuth
+          </summary>
+          <div className="mt-4 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Optional legacy Claude Code subscription auth. API keys are used first when present.
+            </p>
+            {hasOAuthToken ? (
+              <ConnectedState label="Claude Code connected" secretKey="ANTHROPIC_OAUTH_TOKEN" />
+            ) : (
+              <ConnectFlow />
+            )}
+          </div>
+        </details>
+      </div>
     </div>
   );
 }
@@ -83,13 +103,13 @@ export function AnthropicIntegrationSettings() {
 // ---------------------------------------------------------------------------
 // Connected — green dot + disconnect
 // ---------------------------------------------------------------------------
-function ConnectedState() {
+function ConnectedState({ label, secretKey }: { label: string; secretKey: string }) {
   const [disconnecting, setDisconnecting] = useState(false);
 
   const handleDisconnect = async () => {
     setDisconnecting(true);
     try {
-      const res = await fetch("/api/secrets/ANTHROPIC_OAUTH_TOKEN", {
+      const res = await fetch(`/api/secrets/${encodeURIComponent(secretKey)}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -110,11 +130,86 @@ function ConnectedState() {
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
         <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
-        <span className="text-sm text-foreground">Connected</span>
+        <span className="text-sm text-foreground">{label}</span>
       </div>
       <Button variant="destructive" size="sm" onClick={handleDisconnect} disabled={disconnecting}>
         {disconnecting ? "Disconnecting..." : "Disconnect"}
       </Button>
+    </div>
+  );
+}
+
+function ApiKeyForm() {
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const hasUnsavedKey = apiKey.trim().length > 0;
+
+  const handleSave = async () => {
+    const trimmedApiKey = apiKey.trim();
+    if (!trimmedApiKey) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/secrets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secrets: { ANTHROPIC_API_KEY: trimmedApiKey } }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        await mutate("/api/secrets");
+        setApiKey("");
+        toast.success("Anthropic API key saved");
+      } else {
+        const message = data.error || "Failed to save API key";
+        setError(message);
+        toast.error(message);
+      }
+    } catch {
+      setError("Failed to save API key");
+      toast.error("Failed to save API key");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <span
+          className={`inline-block w-2 h-2 rounded-full ${
+            hasUnsavedKey ? "bg-warning" : "bg-muted-foreground"
+          }`}
+        />
+        <span className={`text-sm ${hasUnsavedKey ? "text-warning" : "text-muted-foreground"}`}>
+          {hasUnsavedKey ? "Unsaved API key entered" : "No API key saved"}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Input
+          type="password"
+          value={apiKey}
+          onChange={(e) => {
+            setApiKey(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              handleSave();
+            }
+          }}
+          placeholder="sk-ant-..."
+          className="flex-1 font-mono text-sm"
+        />
+        <Button size="sm" onClick={handleSave} disabled={!apiKey.trim() || saving}>
+          {saving ? "Saving..." : hasUnsavedKey ? "Save entered key" : "Save API key"}
+        </Button>
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

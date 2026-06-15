@@ -13,24 +13,22 @@ This template covers:
 """
 
 import asyncio
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+import contextlib
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
 
-# [ADAPTER CHANGE] Import the event contract from bridge.py — single source of truth.
-# Don't duplicate these; if the bridge adds a new required field, your tests will catch it.
-from sandbox_runtime.bridge import REQUIRED_EVENT_FIELDS
-
 # TODO: Import your adapter class and the registry loader.
 # from sandbox_runtime.adapters.my_agent import MyAgentAdapter
 # from sandbox_runtime.adapters import load_adapter
-
 # For now, use the template adapter so this file parses.
 # Delete these two lines once you've imported your own adapter.
 from sandbox_runtime.adapters.template import TemplateAdapter as MyAgentAdapter
 
+# [ADAPTER CHANGE] Import the event contract from bridge.py — single source of truth.
+# Don't duplicate these; if the bridge adds a new required field, your tests will catch it.
+from sandbox_runtime.bridge import REQUIRED_EVENT_FIELDS
 
 # ─────────────────────────────────────────────────────────────────────
 # Helpers
@@ -317,7 +315,12 @@ def test_step_start_requires_message_id():
 
 def test_step_finish_requires_message_id():
     """step_finish events must have 'messageId'."""
-    valid = {"type": "step_finish", "messageId": "msg_1", "tokens": {"input": 10, "output": 5}, "cost": 0.001}
+    valid = {
+        "type": "step_finish",
+        "messageId": "msg_1",
+        "tokens": {"input": 10, "output": 5},
+        "cost": 0.001,
+    }
     assert validate_event(valid) == []
     assert validate_event({"type": "step_finish"}) != []
 
@@ -401,10 +404,8 @@ async def test_session_roundtrip(adapter, tmp_path, monkeypatch):
 def test_get_session_id_for_snapshot_before_save(adapter):
     """get_session_id_for_snapshot() returns None before any session exists."""
     # Wipe any default file that might exist
-    try:
+    with contextlib.suppress(FileNotFoundError):
         adapter.SESSION_ID_FILE.unlink()
-    except FileNotFoundError:
-        pass
     assert adapter.get_session_id_for_snapshot() is None
 
 

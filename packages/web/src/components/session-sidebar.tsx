@@ -72,6 +72,7 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [extraSessions, setExtraSessions] = useState<SessionItem[]>([]);
+  const [hiddenSessionIds, setHiddenSessionIds] = useState<Set<string>>(new Set());
   const [hasMorePages, setHasMorePages] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -162,8 +163,11 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
   ]);
 
   const sessions = useMemo(
-    () => mergeUniqueSessions(firstPageSessions, effectiveExtraSessions),
-    [firstPageSessions, effectiveExtraSessions]
+    () =>
+      mergeUniqueSessions(firstPageSessions, effectiveExtraSessions).filter(
+        (session) => !hiddenSessionIds.has(session.id)
+      ),
+    [firstPageSessions, effectiveExtraSessions, hiddenSessionIds]
   );
 
   // Sort sessions by updatedAt (most recent first), filter by search query,
@@ -198,7 +202,9 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
       if (parentId && visibleIds.has(parentId)) {
         // Parent is visible — nest under it
         const siblings = children.get(parentId) ?? [];
-        siblings.push(session);
+        if (!siblings.some((sibling) => sibling.id === session.id)) {
+          siblings.push(session);
+        }
         children.set(parentId, siblings);
       } else {
         // Top-level session (or orphan child whose parent is filtered out)
@@ -225,6 +231,7 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
 
   const handleSessionArchived = useCallback(
     async (sessionId: string) => {
+      setHiddenSessionIds((prev) => new Set(prev).add(sessionId));
       await mutate<SessionListResponse>(
         SIDEBAR_SESSIONS_KEY,
         (current) =>
@@ -244,6 +251,7 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
 
   const handleSessionDeleted = useCallback(
     async (sessionId: string) => {
+      setHiddenSessionIds((prev) => new Set(prev).add(sessionId));
       await mutate<SessionListResponse>(
         SIDEBAR_SESSIONS_KEY,
         (current) =>

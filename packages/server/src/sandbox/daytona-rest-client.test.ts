@@ -90,6 +90,24 @@ describe("DaytonaRestClient", () => {
         })
       );
     });
+
+    it("sends Daytona organization id when configured", async () => {
+      const client = new DaytonaRestClient({
+        ...defaultConfig,
+        organizationId: "org-123",
+      });
+      fetchSpy.mockResolvedValue(jsonResponse({ id: "sb-1", state: "started" }));
+
+      await client.getSandbox("sb-1");
+
+      const [, init] = fetchSpy.mock.calls[0];
+      expect(init.headers).toEqual(
+        expect.objectContaining({
+          Authorization: "Bearer test-api-key",
+          "X-Daytona-Organization-ID": "org-123",
+        })
+      );
+    });
   });
 
   describe("createSandbox", () => {

@@ -1,11 +1,11 @@
 import { toast } from "sonner";
 
 /**
- * Permanently deletes a session AND its Daytona sandbox (frees disk).
+ * Permanently deletes a session and asks the server to clean up any attached sandbox.
  *
  * This is NOT the same as archive:
- * - Archive: hides session from sidebar, sandbox keeps running, disk still used.
- * - Delete: stops sandbox, destroys it on Daytona, removes D1 record. Irreversible.
+ * - Archive: hides session from sidebar and keeps it resumable.
+ * - Delete: removes the session index record and attempts provider cleanup. Irreversible.
  *
  * Returns `true` when the request succeeds. Callers are responsible for
  * updating any client-side caches or navigation state.
@@ -19,7 +19,7 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
       return false;
     }
 
-    toast.success("Session deleted and sandbox destroyed");
+    toast.success("Session deleted");
     return true;
   } catch {
     toast.error("Failed to delete session");

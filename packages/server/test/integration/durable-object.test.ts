@@ -25,7 +25,7 @@ describe("SessionDO Durable Object", () => {
         repoName: "web-app",
         repoId: 12345,
         title: "Integration test session",
-        model: "anthropic/claude-haiku-4-5",
+        model: "anthropic/claude-sonnet-4-6",
         userId: "user-1",
         scmLogin: "testuser",
       }),
@@ -48,7 +48,7 @@ describe("SessionDO Durable Object", () => {
     expect(state.repoOwner).toBe("acme");
     expect(state.repoName).toBe("web-app");
     expect(state.status).toBe("created");
-    expect(state.model).toBe("anthropic/claude-haiku-4-5");
+    expect(state.model).toBe("anthropic/claude-sonnet-4-6");
   });
 
   it("has SQLite tables accessible via runInDurableObject", async () => {

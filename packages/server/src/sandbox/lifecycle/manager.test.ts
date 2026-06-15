@@ -652,6 +652,44 @@ describe("SandboxLifecycleManager", () => {
       expect(storage.calls).toContain("updateSandboxStatus:failed");
     });
 
+    it("stores and broadcasts Daytona creation credential failures", async () => {
+      const sandbox = createMockSandbox({ status: "pending", created_at: Date.now() - 60000 });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const broadcaster = createMockBroadcaster();
+      const wsManager = createMockWebSocketManager(false);
+      const provider = createMockProvider({
+        createSandbox: vi.fn(async () => {
+          throw new SandboxProviderError(
+            'Failed to create Daytona sandbox: {"path":"/api/sandbox","statusCode":401,"error":"Unauthorized","message":"Invalid credentials"}',
+            "permanent"
+          );
+        }),
+      });
+
+      const manager = new SandboxLifecycleManager(
+        provider,
+        storage,
+        broadcaster,
+        wsManager,
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      await manager.spawnSandbox();
+
+      expect(storage.calls).toContain(
+        'setLastSpawnError:Failed to create Daytona sandbox: {"path":"/api/sandbox","statusCode":401,"error":"Unauthorized","message":"Invalid credentials"}'
+      );
+      expect(broadcaster.messages).toContainEqual(
+        expect.objectContaining({
+          type: "sandbox_error",
+          error: expect.stringContaining("Invalid credentials"),
+        })
+      );
+      expect(storage.calls).toContain("updateSandboxStatus:failed");
+    });
+
     it("does not increment circuit breaker for transient errors", async () => {
       const sandbox = createMockSandbox({ status: "pending", created_at: Date.now() - 60000 });
       const storage = createMockStorage(createMockSession(), sandbox);

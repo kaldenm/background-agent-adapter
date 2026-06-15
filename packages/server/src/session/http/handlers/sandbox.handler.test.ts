@@ -28,7 +28,12 @@ function createHandler() {
     child: vi.fn(),
   } as unknown as Logger;
 
-  const refreshAnthropicToken = vi.fn(async () => ({ ok: true as const, accessToken: "at", refreshToken: "rt", expiresIn: 3600 }));
+  const refreshAnthropicToken = vi.fn(async () => ({
+    ok: true as const,
+    accessToken: "at",
+    refreshToken: "rt",
+    expiresIn: 3600,
+  }));
   const persistRotatedAnthropicToken = vi.fn(async () => ({ ok: true as const }));
 
   const handler = createSandboxHandler({

@@ -16,7 +16,7 @@ import os
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import modal
 
@@ -141,7 +141,7 @@ class SandboxManager:
         return resolved
 
     @staticmethod
-    def _validate_ports(raw: list) -> list[int]:
+    def _validate_ports(raw: list[Any]) -> list[int]:
         """Validate and sanitize tunnel ports: must be int, 1-65535, max MAX_TUNNEL_PORTS."""
         ports: list[int] = []
         for p in raw:
@@ -289,7 +289,7 @@ class SandboxManager:
 
         # Create the sandbox
         # The entrypoint command is passed as positional args
-        create_kwargs: dict = {
+        create_kwargs: dict[str, Any] = {
             "image": image,
             "app": app,
             "secrets": [llm_secrets],
@@ -392,7 +392,7 @@ class SandboxManager:
             secrets=[],
             timeout=BUILD_TIMEOUT_SECONDS,
             workdir="/workspace",
-            env=env_vars,
+            env=cast("dict[str, str | None]", env_vars),
         )
 
         modal_object_id = sandbox.object_id
@@ -524,7 +524,7 @@ class SandboxManager:
     async def restore_from_snapshot(
         self,
         snapshot_image_id: str,
-        session_config: SessionConfig | dict,
+        session_config: SessionConfig | dict[str, Any],
         sandbox_id: str | None = None,
         server_url: str = "",
         sandbox_auth_token: str = "",
@@ -601,7 +601,7 @@ class SandboxManager:
             env_vars["TERMINAL_ENABLED"] = "true"
 
         # Create the sandbox from the snapshot image
-        create_kwargs: dict = {
+        create_kwargs: dict[str, Any] = {
             "image": image,  # Use the snapshot image directly
             "app": app,
             "secrets": [llm_secrets],

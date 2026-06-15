@@ -12,6 +12,7 @@ venv/
 *.egg-info/
 .ruff_cache/
 .pytest_cache/
+.mypy_cache/
 
 # Build outputs
 dist/
@@ -45,6 +46,8 @@ yarn-error.log*
 # Test
 coverage/
 .nyc_output/
+playwright-report/
+test-results/
 
 # Cloudflare
 .wrangler/
@@ -88,12 +91,14 @@ terraform.rc
 
 # Internal docs (kept locally)
 docs/internal/
+docs/skill-outputs/**
 
 SECURITY-AUDIT.md
 terraform/environments/production/plan.out
 terraform/environments/production/backend_override.tf
 terraform/environments/production/terraform.tfstate*
 terraform/environments/production/.terraform*
+terraform/modules/**/.terraform.lock.hcl
 pi-information/
 personal_notes/
 wrangler-tail.toml

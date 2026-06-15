@@ -39,6 +39,7 @@ interface UseSessionSocketReturn {
   replaying: boolean;
   authError: string | null;
   connectionError: string | null;
+  sandboxError: string | null;
   sessionState: SessionState | null;
   messages: Message[];
   events: SandboxEvent[];
@@ -202,6 +203,7 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
   const [replaying, setReplaying] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [sandboxError, setSandboxError] = useState<string | null>(null);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [messages, _setMessages] = useState<Message[]>([]);
   const [events, setEvents] = useState<SandboxEvent[]>([]);
@@ -310,8 +312,11 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
           setReplaying(false);
 
           if (data.spawnError && data.state?.sandboxStatus === "failed") {
-            console.error("Sandbox spawn error:", data.spawnError);
+            console.warn("Sandbox spawn error:", data.spawnError);
+            setSandboxError(data.spawnError);
             setSessionState((prev) => (prev ? { ...prev, sandboxStatus: "failed" } : null));
+          } else if (data.state?.sandboxStatus !== "failed") {
+            setSandboxError(null);
           }
           break;
         }
@@ -361,10 +366,12 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
           break;
 
         case "sandbox_warming":
+          setSandboxError(null);
           setSessionState((prev) => (prev ? { ...prev, sandboxStatus: "warming" } : null));
           break;
 
         case "sandbox_spawning":
+          setSandboxError(null);
           setSessionState((prev) =>
             prev
               ? {
@@ -383,6 +390,9 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
         case "sandbox_status": {
           const isTerminal =
             data.status === "stale" || data.status === "stopped" || data.status === "failed";
+          if (data.status !== "failed") {
+            setSandboxError(null);
+          }
           setSessionState((prev) =>
             prev
               ? {
@@ -418,6 +428,7 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
           break;
 
         case "sandbox_ready":
+          setSandboxError(null);
           setSessionState((prev) => (prev ? { ...prev, sandboxStatus: "ready" } : null));
           break;
 
@@ -463,7 +474,8 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
           break;
 
         case "sandbox_error":
-          console.error("Sandbox error:", data.error);
+          console.warn("Sandbox error:", data.error);
+          setSandboxError(data.error);
           setSessionState((prev) => (prev ? { ...prev, sandboxStatus: "failed" } : null));
           break;
 
@@ -742,6 +754,7 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
     replaying,
     authError,
     connectionError,
+    sandboxError,
     sessionState,
     messages,
     events,

@@ -39,7 +39,9 @@ export function ChildSessionsSection({ sessionId }: ChildSessionsSectionProps) {
     },
   });
 
-  const children = data?.children;
+  const children = data?.children
+    ? Array.from(new Map(data.children.map((child) => [child.id, child])).values())
+    : undefined;
   if (!children?.length) return null;
 
   return (

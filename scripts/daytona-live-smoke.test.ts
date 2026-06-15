@@ -118,6 +118,76 @@ test("creates, inspects, stops, and deletes a disposable Daytona sandbox", async
   );
 });
 
+test("retries cleanup when Daytona is still changing sandbox state", async () => {
+  const calls: Array<{ url: string; method: string }> = [];
+  let deleteAttempts = 0;
+  let sleepCalls = 0;
+  const toolboxResult = [
+    "python=Python 3.12.1",
+    "node=v22.1.0",
+    "git=git version 2.40.1",
+    "workspace=ok",
+    "app_runtime=ok",
+    "sandbox_runtime_import=ok",
+    "agent_browser=ok",
+    "code_server=ok",
+  ].join("\n");
+
+  const result = await runDaytonaLiveSmoke({
+    args: ["--create-sandbox", "--env", "missing.env"],
+    cwd: "/tmp",
+    env,
+    sleep: async () => {
+      sleepCalls += 1;
+    },
+    now: () => 1_000,
+    fetchImpl: async (url, init) => {
+      calls.push({ url, method: init?.method ?? "GET" });
+
+      if (url === "https://daytona.test/api/sandbox" && (!init?.method || init.method === "GET")) {
+        return jsonResponse(200, { items: [] });
+      }
+      if (url === "https://daytona.test/api/sandbox" && init?.method === "POST") {
+        return jsonResponse(200, { id: "sandbox-live-smoke", state: "creating" });
+      }
+      if (url === "https://daytona.test/api/sandbox/sandbox-live-smoke") {
+        if (init?.method === "DELETE") {
+          deleteAttempts += 1;
+          if (deleteAttempts === 1) {
+            return jsonResponse(409, { message: "Sandbox state change in progress" });
+          }
+          return textResponse(204);
+        }
+        return jsonResponse(200, { id: "sandbox-live-smoke", state: "started" });
+      }
+      if (
+        url === "https://proxy.app.daytona.io/toolbox/sandbox-live-smoke/process/execute" &&
+        init?.method === "POST"
+      ) {
+        return jsonResponse(200, { result: toolboxResult });
+      }
+      if (
+        url === "https://daytona.test/api/sandbox/sandbox-live-smoke/stop" &&
+        init?.method === "POST"
+      ) {
+        return textResponse(200);
+      }
+      return jsonResponse(500, { message: `unexpected ${init?.method ?? "GET"} ${url}` });
+    },
+  });
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.equal(deleteAttempts, 2);
+  assert.equal(sleepCalls, 1);
+  assert.ok(
+    calls.some(
+      (call) =>
+        call.url === "https://daytona.test/api/sandbox/sandbox-live-smoke" &&
+        call.method === "DELETE"
+    )
+  );
+});
+
 test("redacts the API key if Daytona returns it in an error body", async () => {
   const result = await runDaytonaLiveSmoke({
     args: ["--create-sandbox", "--env", "missing.env"],

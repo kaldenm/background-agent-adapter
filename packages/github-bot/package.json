@@ -5,9 +5,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "npm run build --workspace @open-inspect/shared",
     "build": "esbuild src/index.ts --bundle --format=esm --outfile=dist/index.js --platform=browser --target=es2022 --external:cloudflare:* --external:node:*",
+    "pretest": "npm run build --workspace @open-inspect/shared",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "pretypecheck": "npm run build --workspace @open-inspect/shared",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix"

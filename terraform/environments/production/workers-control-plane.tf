@@ -69,6 +69,9 @@ module "control_plane_worker" {
       { name = "DAYTONA_API_URL", value = var.daytona_api_url },
       { name = "DAYTONA_BASE_SNAPSHOT", value = var.daytona_base_snapshot },
     ] : [],
+    local.use_daytona_backend && var.daytona_organization_id != "" ? [
+      { name = "DAYTONA_ORGANIZATION_ID", value = var.daytona_organization_id },
+    ] : [],
     local.use_daytona_backend && var.daytona_target != "" ? [
       { name = "DAYTONA_TARGET", value = var.daytona_target },
     ] : []

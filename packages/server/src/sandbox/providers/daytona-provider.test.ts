@@ -248,6 +248,27 @@ describe("DaytonaSandboxProvider", () => {
       expect(envVars.SANDBOX_ID).toBe("sandbox-456");
     });
 
+    it("passes Anthropic API key secrets into the Daytona sandbox env", async () => {
+      const client = createMockClient();
+      const provider = new DaytonaSandboxProvider(
+        client,
+        defaultProviderConfig,
+        defaultGetCloneToken
+      );
+
+      await provider.createSandbox({
+        ...baseCreateConfig,
+        userEnvVars: {
+          ANTHROPIC_API_KEY: "sk-ant-test",
+          ANTHROPIC_OAUTH_TOKEN: "legacy-oauth-token",
+        },
+      });
+
+      const envVars = (client.createSandbox as ReturnType<typeof vi.fn>).mock.calls[0][0].env;
+      expect(envVars.ANTHROPIC_API_KEY).toBe("sk-ant-test");
+      expect(envVars.ANTHROPIC_OAUTH_TOKEN).toBe("legacy-oauth-token");
+    });
+
     it("builds labels correctly", async () => {
       const client = createMockClient();
       const provider = new DaytonaSandboxProvider(
@@ -325,6 +346,32 @@ describe("DaytonaSandboxProvider", () => {
       } catch (e) {
         expect(e).toBeInstanceOf(SandboxProviderError);
         expect((e as SandboxProviderError).errorType).toBe("permanent");
+      }
+    });
+
+    it("preserves Daytona 401 invalid credentials as a permanent provider auth failure", async () => {
+      const client = createMockClient({
+        createSandbox: async () => {
+          throw new DaytonaApiError(
+            '{"path":"/api/sandbox","statusCode":401,"error":"Unauthorized","message":"Invalid credentials"}',
+            401
+          );
+        },
+      });
+      const provider = new DaytonaSandboxProvider(
+        client,
+        defaultProviderConfig,
+        defaultGetCloneToken
+      );
+
+      try {
+        await provider.createSandbox(baseCreateConfig);
+        expect.unreachable("should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(SandboxProviderError);
+        expect((e as SandboxProviderError).errorType).toBe("permanent");
+        expect((e as SandboxProviderError).message).toContain("Failed to create Daytona sandbox");
+        expect((e as SandboxProviderError).message).toContain("Invalid credentials");
       }
     });
 

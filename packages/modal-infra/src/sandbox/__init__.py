@@ -9,21 +9,21 @@ from sandbox_runtime import GitSyncStatus, GitUser, SandboxEvent, SandboxStatus,
 
 # Manager is only available when running in Modal function context (not inside sandbox)
 # Use lazy import to avoid ModuleNotFoundError
-def get_manager():
+def get_manager() -> type:
     """Get the SandboxManager class (only available in Modal function context)."""
     from .manager import SandboxManager
 
     return SandboxManager
 
 
-def get_sandbox_config():
+def get_sandbox_config() -> type:
     """Get the SandboxConfig class (only available in Modal function context)."""
     from .manager import SandboxConfig
 
     return SandboxConfig
 
 
-def get_sandbox_handle():
+def get_sandbox_handle() -> type:
     """Get the SandboxHandle class (only available in Modal function context)."""
     from .manager import SandboxHandle
 

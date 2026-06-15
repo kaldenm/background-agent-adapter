@@ -2,14 +2,12 @@
 
 import asyncio
 import json
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from sandbox_runtime.adapters import load_adapter
 from sandbox_runtime.adapters.pi import PiAdapter
-
 
 # ─────────────────────────────────────────────────────────────────────
 # Registry
@@ -48,6 +46,100 @@ async def test_install_creates_pi_directory(tmp_path):
     adapter = PiAdapter()
     await adapter.install(tmp_path, {})
     assert (tmp_path / ".pi").is_dir()
+
+
+def test_setup_anthropic_oauth_writes_global_and_project_auth_json(tmp_path):
+    adapter = PiAdapter()
+    pi_dir = tmp_path / "repo" / ".pi"
+    pi_dir.mkdir(parents=True)
+
+    with (
+        patch.dict("os.environ", {"ANTHROPIC_OAUTH_TOKEN": "refresh-v1"}, clear=False),
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        adapter._setup_anthropic_oauth(pi_dir)
+
+    expected = {
+        "anthropic": {
+            "type": "oauth",
+            "refresh": "refresh-v1",
+            "access": "",
+            "expires": 0,
+        }
+    }
+    global_auth_path = tmp_path / ".pi" / "agent" / "auth.json"
+    project_auth_path = pi_dir / "auth.json"
+
+    assert json.loads(global_auth_path.read_text()) == expected
+    assert json.loads(project_auth_path.read_text()) == expected
+
+
+def test_setup_anthropic_oauth_supports_legacy_refresh_env(tmp_path, monkeypatch):
+    adapter = PiAdapter()
+    pi_dir = tmp_path / "repo" / ".pi"
+    pi_dir.mkdir(parents=True)
+    monkeypatch.delenv("ANTHROPIC_OAUTH_TOKEN", raising=False)
+
+    with (
+        patch.dict("os.environ", {"ANTHROPIC_OAUTH_REFRESH_TOKEN": "legacy-refresh"}, clear=False),
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        adapter._setup_anthropic_oauth(pi_dir)
+
+    global_auth = json.loads((tmp_path / ".pi" / "agent" / "auth.json").read_text())
+    assert global_auth["anthropic"]["refresh"] == "legacy-refresh"
+
+
+def test_setup_anthropic_oauth_skips_without_refresh_token(tmp_path, monkeypatch):
+    adapter = PiAdapter()
+    pi_dir = tmp_path / "repo" / ".pi"
+    pi_dir.mkdir(parents=True)
+    monkeypatch.delenv("ANTHROPIC_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_OAUTH_REFRESH_TOKEN", raising=False)
+
+    with patch("pathlib.Path.home", return_value=tmp_path):
+        adapter._setup_anthropic_oauth(pi_dir)
+
+    assert not (tmp_path / ".pi" / "agent" / "auth.json").exists()
+    assert not (pi_dir / "auth.json").exists()
+
+
+def test_setup_anthropic_oauth_skips_when_api_key_is_configured(tmp_path):
+    adapter = PiAdapter()
+    pi_dir = tmp_path / "repo" / ".pi"
+    pi_dir.mkdir(parents=True)
+
+    with (
+        patch.dict(
+            "os.environ",
+            {
+                "ANTHROPIC_API_KEY": "sk-ant-api-key",
+                "ANTHROPIC_OAUTH_TOKEN": "refresh-v1",
+            },
+            clear=False,
+        ),
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        adapter._setup_anthropic_oauth(pi_dir)
+
+    assert not (tmp_path / ".pi" / "agent" / "auth.json").exists()
+    assert not (pi_dir / "auth.json").exists()
+
+
+def test_install_cc_patch_skips_when_api_key_is_configured(tmp_path):
+    adapter = PiAdapter()
+
+    with patch.dict(
+        "os.environ",
+        {
+            "ANTHROPIC_API_KEY": "sk-ant-api-key",
+            "ANTHROPIC_OAUTH_TOKEN": "refresh-v1",
+        },
+        clear=False,
+    ):
+        adapter._install_cc_patch_extension(tmp_path)
+
+    assert not (tmp_path / ".pi" / "extensions" / "pi-cc-patch").exists()
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -199,7 +291,9 @@ class TestTranslateEvent:
         assert result is None
 
     def test_compaction_dropped(self):
-        result = self.adapter._convert_pi_event_to_standard({"type": "compaction_start"}, self.msg_id)
+        result = self.adapter._convert_pi_event_to_standard(
+            {"type": "compaction_start"}, self.msg_id
+        )
         assert result is None
 
     def test_auto_retry_end_failure(self):
@@ -248,7 +342,12 @@ class TestExtensionUI:
     @pytest.mark.asyncio
     async def test_confirm_auto_approves(self):
         await self.adapter._auto_respond_to_dialog(
-            {"type": "extension_ui_request", "id": "uuid-1", "method": "confirm", "title": "Delete?"}
+            {
+                "type": "extension_ui_request",
+                "id": "uuid-1",
+                "method": "confirm",
+                "title": "Delete?",
+            }
         )
         assert len(self.written) == 1
         assert self.written[0]["confirmed"] is True
@@ -493,8 +592,15 @@ async def test_read_agent_events_until_agent_end():
     # Simulate Pi sending events
     events = [
         {"type": "turn_start"},
-        {"type": "message_update", "message": {}, "assistantMessageEvent": {"type": "text_delta", "delta": "Hi"}},
-        {"type": "turn_end", "message": {"usage": {"input": 10, "output": 5, "cost": {"total": 0.001}}}},
+        {
+            "type": "message_update",
+            "message": {},
+            "assistantMessageEvent": {"type": "text_delta", "delta": "Hi"},
+        },
+        {
+            "type": "turn_end",
+            "message": {"usage": {"input": 10, "output": 5, "cost": {"total": 0.001}}},
+        },
         {"type": "agent_end", "messages": []},
     ]
     for e in events:
@@ -563,4 +669,4 @@ async def test_read_agent_events_eof():
     assert collected[0]["status"] == "crashed"
     # Second: error event for the bridge
     assert collected[1]["type"] == "error"
-    assert "exited unexpectedly" in collected[1]["error"]
+    assert "Pi exited" in collected[1]["error"]

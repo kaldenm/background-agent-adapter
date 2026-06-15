@@ -33,6 +33,7 @@ This package provides the data plane for Open-Inspect:
 ### Images (`src/images/`)
 
 Base image definition with:
+
 - Debian slim + git, curl, build-essential
 - Node.js 22, pnpm, Bun
 - Python 3.12 with uv
@@ -61,8 +62,8 @@ Base image definition with:
 
 ## Usage
 
-> **Full deployment guide**: See [docs/GETTING_STARTED.md](../../docs/GETTING_STARTED.md) for complete setup
-> instructions including all required secrets and configuration.
+> **Full deployment guide**: See [docs/GETTING_STARTED.md](../../docs/GETTING_STARTED.md) for
+> complete setup instructions including all required secrets and configuration.
 
 ### Prerequisites
 
@@ -90,8 +91,8 @@ See `.env.example` for a full list of environment variables.
 
 ### Install local packages
 
-`sandbox-runtime` is a sibling package in this monorepo (not published to PyPI).
-If you use `uv`, it is resolved automatically. Otherwise install it first:
+`sandbox-runtime` is a sibling package in this monorepo (not published to PyPI). If you use `uv`, it
+is resolved automatically. Otherwise install it first:
 
 ```bash
 pip install -e ../sandbox-runtime
@@ -111,25 +112,25 @@ modal deploy -m src
 modal run src/
 ```
 
-> **Note**: Never deploy `src/app.py` directly - it only defines the app and shared resources.
-> Use `deploy.py` or `-m src` to ensure all function modules are registered.
+> **Note**: Never deploy `src/app.py` directly - it only defines the app and shared resources. Use
+> `deploy.py` or `-m src` to ensure all function modules are registered.
 
 ## HTTP API
 
-The control plane communicates with Modal via HTTP endpoints. All endpoints (except health)
-require HMAC authentication via the `Authorization` header.
+The control plane communicates with Modal via HTTP endpoints. All endpoints (except health) require
+HMAC authentication via the `Authorization` header.
 
 Endpoint URLs follow the pattern: `https://{workspace}--open-inspect-{endpoint}.modal.run`
 
 ### Endpoints
 
-| Endpoint | Method | Auth | Description |
-|----------|--------|------|-------------|
-| `api-health` | GET | No | Health check |
-| `api-create-sandbox` | POST | Yes | Create a new sandbox |
-| `api-warm-sandbox` | POST | Yes | Pre-warm a sandbox |
-| `api-snapshot-sandbox` | POST | Yes | Take filesystem snapshot |
-| `api-restore-sandbox` | POST | Yes | Restore sandbox from snapshot |
+| Endpoint               | Method | Auth | Description                   |
+| ---------------------- | ------ | ---- | ----------------------------- |
+| `api-health`           | GET    | No   | Health check                  |
+| `api-create-sandbox`   | POST   | Yes  | Create a new sandbox          |
+| `api-warm-sandbox`     | POST   | Yes  | Pre-warm a sandbox            |
+| `api-snapshot-sandbox` | POST   | Yes  | Take filesystem snapshot      |
+| `api-restore-sandbox`  | POST   | Yes  | Restore sandbox from snapshot |
 
 ### Example: Create Sandbox
 
@@ -157,24 +158,24 @@ curl "https://${WORKSPACE}--open-inspect-api-health.modal.run"
 
 Set via Modal secrets:
 
-| Variable | Secret | Description |
-|----------|--------|-------------|
-| `ANTHROPIC_API_KEY` | `llm-api-keys` | Anthropic API key for Claude |
-| `GITHUB_APP_ID` | `github-app` | GitHub App ID for repo access |
-| `GITHUB_APP_PRIVATE_KEY` | `github-app` | GitHub App private key (PKCS#8) |
-| `GITHUB_APP_INSTALLATION_ID` | `github-app` | GitHub App installation ID |
-| `MODAL_API_SECRET` | `internal-api` | Shared secret for control plane auth |
+| Variable                      | Secret         | Description                                          |
+| ----------------------------- | -------------- | ---------------------------------------------------- |
+| `ANTHROPIC_API_KEY`           | `llm-api-keys` | Anthropic API key for Claude                         |
+| `GITHUB_APP_ID`               | `github-app`   | GitHub App ID for repo access                        |
+| `GITHUB_APP_PRIVATE_KEY`      | `github-app`   | GitHub App private key (PKCS#8)                      |
+| `GITHUB_APP_INSTALLATION_ID`  | `github-app`   | GitHub App installation ID                           |
+| `MODAL_API_SECRET`            | `internal-api` | Shared secret for control plane auth                 |
 | `ALLOWED_CONTROL_PLANE_HOSTS` | `internal-api` | Comma-separated allowed hostnames for URL validation |
 
 ## Verification Criteria
 
-| Criterion | Test Method |
-|-----------|-------------|
-| App deploys successfully | `modal deploy deploy.py` completes without errors |
+| Criterion                | Test Method                                                   |
+| ------------------------ | ------------------------------------------------------------- |
+| App deploys successfully | `modal deploy deploy.py` completes without errors             |
 | Health endpoint responds | `curl https://{workspace}--open-inspect-api-health.modal.run` |
-| Sandbox creation works | POST to `api-create-sandbox` returns success |
-| Git sync completes | Verify HEAD matches origin after sandbox start |
-| Snapshot/restore works | Take snapshot, restore, verify workspace state |
+| Sandbox creation works   | POST to `api-create-sandbox` returns success                  |
+| Git sync completes       | Verify HEAD matches origin after sandbox start                |
+| Snapshot/restore works   | Take snapshot, restore, verify workspace state                |
 
 ## Development
 

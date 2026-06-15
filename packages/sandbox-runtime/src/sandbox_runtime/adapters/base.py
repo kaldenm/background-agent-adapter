@@ -7,7 +7,7 @@ implement this ABC (12 abstract methods + shutdown() which has a default). The a
 - **Bridge subprocess** — calls configure(), create_session(), send_prompt(), stop(),
   health_check(), load_session_id(), save_session_id(), get_session_id_for_snapshot()
 
-See the spec for details on the two-process architecture. They are two diff process because they need separate 
+See the spec for details on the two-process architecture. They are two diff process because they need separate
 crash and restart flows. If ws drops, bridge can restart without killing the agent. If agent crashes,
 don't need to kill the bridge because that would mean losing the streaming state and all the events.
 """
@@ -32,7 +32,7 @@ class AgentAdapter(ABC):
     # --- Supervisor process methods (agent lifecycle) ---
 
     @abstractmethod
-    async def install(self, workdir: Path, session_config: dict) -> None:
+    async def install(self, workdir: Path, session_config: dict[str, Any]) -> None:
         """One-time setup: tools, plugins, config files.
 
         Called after git clone, before the agent process starts.
@@ -43,7 +43,7 @@ class AgentAdapter(ABC):
         """
 
     @abstractmethod
-    async def prepare(self, workdir: Path, session_config: dict) -> None:
+    async def prepare(self, workdir: Path, session_config: dict[str, Any]) -> None:
         """Prepare the agent so the bridge can connect.
 
         For server agents: spawn the server process, wait until healthy.
@@ -94,7 +94,7 @@ class AgentAdapter(ABC):
         """
 
     @abstractmethod
-    async def send_prompt(
+    def send_prompt(
         self,
         session_id: str,
         content: str,

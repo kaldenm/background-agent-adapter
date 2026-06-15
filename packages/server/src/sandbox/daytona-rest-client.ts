@@ -18,6 +18,8 @@ export interface DaytonaRestConfig {
   apiUrl: string;
   /** Bearer token for Daytona API auth */
   apiKey: string;
+  /** Optional Daytona organization id for org-scoped API keys */
+  organizationId?: string;
   /** Optional Daytona target name */
   target?: string;
   /** Snapshot name for fresh sandboxes */
@@ -166,10 +168,16 @@ export class DaytonaRestClient {
   // -----------------------------------------------------------------------
 
   private getHeaders(): Record<string, string> {
-    return {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Authorization: `Bearer ${this.config.apiKey}`,
     };
+
+    if (this.config.organizationId) {
+      headers["X-Daytona-Organization-ID"] = this.config.organizationId;
+    }
+
+    return headers;
   }
 
   private async request<T>(

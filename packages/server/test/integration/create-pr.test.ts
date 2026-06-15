@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { env, runInDurableObject } from "cloudflare:test";
 import type { SourceControlProvider } from "../../src/source-control";
 import type { SessionDO } from "../../src/session/durable-object";
+import type { SessionServices } from "../../src/session/create-services";
 import { initSession, queryDO, seedMessage } from "./helpers";
+
+function installSourceControlProvider(instance: SessionDO, provider: SourceControlProvider) {
+  const services = (instance as unknown as { services: SessionServices }).services;
+  services.sourceControlProvider = provider;
+}
 
 describe("POST /internal/create-pr", () => {
   it("returns 404 when session is not initialized", async () => {
@@ -156,9 +162,7 @@ describe("POST /internal/create-pr", () => {
         }),
       } as unknown as SourceControlProvider;
 
-      (
-        instance as unknown as { _sourceControlProvider: SourceControlProvider | null }
-      )._sourceControlProvider = mockProvider;
+      installSourceControlProvider(instance, mockProvider);
     });
 
     const res = await stub.fetch("http://internal/internal/create-pr", {
@@ -236,9 +240,7 @@ describe("POST /internal/create-pr", () => {
         }),
       } as unknown as SourceControlProvider;
 
-      (
-        instance as unknown as { _sourceControlProvider: SourceControlProvider | null }
-      )._sourceControlProvider = mockProvider;
+      installSourceControlProvider(instance, mockProvider);
     });
 
     const res = await stub.fetch("http://internal/internal/create-pr", {

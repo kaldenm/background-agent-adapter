@@ -13,6 +13,7 @@ The control plane must include an Authorization header with a valid token.
 
 import os
 import time
+from typing import Any, cast
 
 from fastapi import Header, HTTPException
 from modal import fastapi_endpoint
@@ -29,6 +30,31 @@ from .log_config import configure_logging, get_logger
 
 configure_logging()
 log = get_logger("web_api")
+
+RequestBody = dict[str, Any]
+ResponseBody = dict[str, Any]
+
+
+def _optional_str(request: RequestBody, key: str) -> str | None:
+    value = request.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _str_value(request: RequestBody, key: str, default: str = "") -> str:
+    value = request.get(key, default)
+    return value if isinstance(value, str) else default
+
+
+def _optional_str_dict(request: RequestBody, key: str) -> dict[str, str] | None:
+    value = request.get(key)
+    if not isinstance(value, dict):
+        return None
+    return {str(k): str(v) for k, v in value.items() if v is not None}
+
+
+def _optional_any_dict(request: RequestBody, key: str) -> dict[str, Any] | None:
+    value = request.get(key)
+    return value if isinstance(value, dict) else None
 
 
 def require_auth(authorization: str | None) -> None:
@@ -79,10 +105,13 @@ def _resolve_clone_token() -> str | None:
         installation_id = os.environ.get("GITHUB_APP_INSTALLATION_ID")
 
         if app_id and private_key and installation_id:
-            return generate_installation_token(
-                app_id=app_id,
-                private_key=private_key,
-                installation_id=installation_id,
+            return cast(
+                "str",
+                generate_installation_token(
+                    app_id=app_id,
+                    private_key=private_key,
+                    installation_id=installation_id,
+                ),
             )
     except Exception as e:
         log.warn("github.token_error", exc=e)
@@ -113,13 +142,13 @@ def require_valid_server_url(url: str | None) -> None:
 )
 @fastapi_endpoint(method="POST")
 async def api_create_sandbox(
-    request: dict,
+    request: RequestBody,
     authorization: str | None = Header(None),
     x_trace_id: str | None = Header(None),
     x_request_id: str | None = Header(None),
     x_session_id: str | None = Header(None),
     x_sandbox_id: str | None = Header(None),
-) -> dict:
+) -> ResponseBody:
     """
     HTTP endpoint to create a sandbox.
 
@@ -144,7 +173,7 @@ async def api_create_sandbox(
 
     require_auth(authorization)
 
-    server_url = request.get("server_url")
+    server_url = _str_value(request, "server_url")
     require_valid_server_url(server_url)
 
     try:
@@ -157,30 +186,32 @@ async def api_create_sandbox(
         clone_token = _resolve_clone_token()
 
         session_config = SessionConfig(
-            session_id=request.get("session_id"),
-            repo_owner=request.get("repo_owner"),
-            repo_name=request.get("repo_name"),
-            branch=request.get("branch"),
-            opencode_session_id=request.get("opencode_session_id"),
-            provider=request.get("provider", "anthropic"),
-            model=request.get("model", "claude-sonnet-4-6"),
+            session_id=_optional_str(request, "session_id"),
+            repo_owner=_str_value(request, "repo_owner"),
+            repo_name=_str_value(request, "repo_name"),
+            branch=_optional_str(request, "branch"),
+            opencode_session_id=_optional_str(request, "opencode_session_id"),
+            provider=_str_value(request, "provider", "anthropic"),
+            model=_str_value(request, "model", "claude-sonnet-4-6"),
             mcp_servers=request.get("mcp_servers"),
         )
 
         config = SandboxConfig(
-            repo_owner=request.get("repo_owner"),
-            repo_name=request.get("repo_name"),
-            sandbox_id=request.get("sandbox_id"),  # Use control-plane-provided ID for auth
-            snapshot_id=request.get("snapshot_id"),
+            repo_owner=_str_value(request, "repo_owner"),
+            repo_name=_str_value(request, "repo_name"),
+            sandbox_id=_optional_str(
+                request, "sandbox_id"
+            ),  # Use control-plane-provided ID for auth
+            snapshot_id=_optional_str(request, "snapshot_id"),
             session_config=session_config,
             server_url=server_url,
-            sandbox_auth_token=request.get("sandbox_auth_token"),
+            sandbox_auth_token=_str_value(request, "sandbox_auth_token"),
             clone_token=clone_token,
-            user_env_vars=request.get("user_env_vars") or None,
-            repo_image_id=request.get("repo_image_id") or None,
-            repo_image_sha=request.get("repo_image_sha") or None,
+            user_env_vars=_optional_str_dict(request, "user_env_vars"),
+            repo_image_id=_optional_str(request, "repo_image_id"),
+            repo_image_sha=_optional_str(request, "repo_image_sha"),
             code_server_enabled=bool(request.get("code_server_enabled", False)),
-            settings=request.get("sandbox_settings") or None,
+            settings=_optional_any_dict(request, "sandbox_settings"),
         )
 
         handle = await manager.create_sandbox(config)
@@ -226,13 +257,13 @@ async def api_create_sandbox(
 )
 @fastapi_endpoint(method="POST")
 async def api_warm_sandbox(
-    request: dict,
+    request: RequestBody,
     authorization: str | None = Header(None),
     x_trace_id: str | None = Header(None),
     x_request_id: str | None = Header(None),
     x_session_id: str | None = Header(None),
     x_sandbox_id: str | None = Header(None),
-) -> dict:
+) -> ResponseBody:
     """
     HTTP endpoint to warm a sandbox.
 
@@ -251,7 +282,7 @@ async def api_warm_sandbox(
 
     require_auth(authorization)
 
-    server_url = request.get("server_url", "")
+    server_url = _str_value(request, "server_url")
     require_valid_server_url(server_url)
 
     try:
@@ -259,8 +290,8 @@ async def api_warm_sandbox(
 
         manager = SandboxManager()
         handle = await manager.warm_sandbox(
-            repo_owner=request.get("repo_owner"),
-            repo_name=request.get("repo_name"),
+            repo_owner=_str_value(request, "repo_owner"),
+            repo_name=_str_value(request, "repo_name"),
             server_url=server_url,
         )
 
@@ -295,7 +326,7 @@ async def api_warm_sandbox(
 
 @app.function(image=function_image)
 @fastapi_endpoint(method="GET")
-def api_health() -> dict:
+def api_health() -> ResponseBody:
     """Health check endpoint. Does not require authentication."""
     return {"success": True, "data": {"status": "healthy", "service": "open-inspect-modal"}}
 
@@ -303,13 +334,13 @@ def api_health() -> dict:
 @app.function(image=function_image, secrets=[internal_api_secret])
 @fastapi_endpoint(method="POST")
 async def api_snapshot_sandbox(
-    request: dict,
+    request: RequestBody,
     authorization: str | None = Header(None),
     x_trace_id: str | None = Header(None),
     x_request_id: str | None = Header(None),
     x_session_id: str | None = Header(None),
     x_sandbox_id: str | None = Header(None),
-) -> dict:
+) -> ResponseBody:
     """
     Take a filesystem snapshot of a running sandbox using Modal's native API.
 
@@ -401,13 +432,13 @@ async def api_snapshot_sandbox(
 @app.function(image=function_image, secrets=[github_app_secrets, internal_api_secret])
 @fastapi_endpoint(method="POST")
 async def api_restore_sandbox(
-    request: dict,
+    request: RequestBody,
     authorization: str | None = Header(None),
     x_trace_id: str | None = Header(None),
     x_request_id: str | None = Header(None),
     x_session_id: str | None = Header(None),
     x_sandbox_id: str | None = Header(None),
-) -> dict:
+) -> ResponseBody:
     """
     Create a new sandbox from a filesystem snapshot.
 
@@ -527,11 +558,11 @@ async def api_restore_sandbox(
 )
 @fastapi_endpoint(method="POST")
 async def api_build_repo_image(
-    request: dict,
+    request: RequestBody,
     authorization: str | None = Header(None),
     x_trace_id: str | None = Header(None),
     x_request_id: str | None = Header(None),
-) -> dict:
+) -> ResponseBody:
     """
     Kick off an async image build. Returns immediately.
 
@@ -559,12 +590,12 @@ async def api_build_repo_image(
     try:
         from .scheduler.image_builder import build_repo_image
 
-        repo_owner = request.get("repo_owner")
-        repo_name = request.get("repo_name")
-        default_branch = request.get("default_branch", "main")
-        build_id = request.get("build_id", "")
-        callback_url = request.get("callback_url", "")
-        user_env_vars = request.get("user_env_vars") or None
+        repo_owner = _optional_str(request, "repo_owner")
+        repo_name = _optional_str(request, "repo_name")
+        default_branch = _str_value(request, "default_branch", "main")
+        build_id = _str_value(request, "build_id")
+        callback_url = _str_value(request, "callback_url")
+        user_env_vars = _optional_str_dict(request, "user_env_vars")
 
         if not repo_owner or not repo_name:
             raise HTTPException(status_code=400, detail="repo_owner and repo_name are required")
@@ -619,11 +650,11 @@ async def api_build_repo_image(
 )
 @fastapi_endpoint(method="POST")
 async def api_delete_provider_image(
-    request: dict,
+    request: RequestBody,
     authorization: str | None = Header(None),
     x_trace_id: str | None = Header(None),
     x_request_id: str | None = Header(None),
-) -> dict:
+) -> ResponseBody:
     """
     Delete a single provider image (best-effort).
 

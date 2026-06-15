@@ -32,7 +32,7 @@ describe("Worker fetch handler", () => {
     expect(response.status).toBe(200);
     const body = await response.json<{ status: string; service: string }>();
     expect(body.status).toBe("healthy");
-    expect(body.service).toBe("open-inspect-control-plane");
+    expect(body.service).toBe("open-inspect-server");
   });
 
   it("includes correlation headers in responses", async () => {

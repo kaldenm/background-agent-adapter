@@ -163,7 +163,9 @@ class TestSSEStreaming:
     """Tests for _stream_opencode_response_sse method."""
 
     @pytest.mark.asyncio
-    async def test_text_streaming_with_delta(self, adapter: OpenCodeAdapter, opencode_message_id: str):
+    async def test_text_streaming_with_delta(
+        self, adapter: OpenCodeAdapter, opencode_message_id: str
+    ):
         """Should accumulate text deltas correctly."""
         http_client = adapter.http_client
 
@@ -564,7 +566,9 @@ class TestFetchFinalMessageState:
         return adapter
 
     @pytest.mark.asyncio
-    async def test_only_fetches_current_prompt_messages(self, adapter_with_mock_client: OpenCodeAdapter):
+    async def test_only_fetches_current_prompt_messages(
+        self, adapter_with_mock_client: OpenCodeAdapter
+    ):
         """Should only emit text from messages whose parentID matches our opencode_message_id."""
         adapter = adapter_with_mock_client
 
@@ -598,7 +602,9 @@ class TestFetchFinalMessageState:
         assert events[0]["messageId"] == "cp-msg-2"
 
     @pytest.mark.asyncio
-    async def test_skips_messages_from_previous_prompts(self, adapter_with_mock_client: OpenCodeAdapter):
+    async def test_skips_messages_from_previous_prompts(
+        self, adapter_with_mock_client: OpenCodeAdapter
+    ):
         """Should skip messages whose parentID doesn't match our opencode_message_id."""
         adapter = adapter_with_mock_client
 
@@ -756,7 +762,9 @@ class TestSSEFollowUpMessageBug:
     """
 
     @pytest.mark.asyncio
-    async def test_second_prompt_shows_correct_response(self, adapter: OpenCodeAdapter, monkeypatch):
+    async def test_second_prompt_shows_correct_response(
+        self, adapter: OpenCodeAdapter, monkeypatch
+    ):
         """Second prompt should show its own response, not the first prompt's."""
         http_client = adapter.http_client
 

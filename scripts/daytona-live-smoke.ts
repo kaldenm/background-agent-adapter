@@ -69,6 +69,7 @@ export async function runDaytonaLiveSmoke(
   const lines: string[] = [];
   let sandboxId: string | undefined;
   let cleanupError: string | undefined;
+  let result: LiveSmokeResult | undefined;
 
   try {
     validateOptIn(args);
@@ -124,19 +125,20 @@ export async function runDaytonaLiveSmoke(
     lines.push("toolbox_runtime_checks=ok");
     lines.push(formatIndentedToolboxOutput(toolboxOutput));
 
-    return { exitCode: 0, stdout: lines.join("\n") };
+    result = { exitCode: 0, stdout: lines.join("\n") };
+    return result;
   } catch (error) {
-    return {
+    result = {
       exitCode: 1,
       stdout: lines.length > 0 ? lines.join("\n") : undefined,
       stderr: sanitizeMessage(error instanceof Error ? error.message : String(error), config),
     };
+    return result;
   } finally {
     if (sandboxId) {
       try {
         const client = new DaytonaApi(config, fetchImpl);
-        await client.post(`/sandbox/${sandboxId}/stop`);
-        await client.delete(`/sandbox/${sandboxId}`);
+        await cleanupSandbox(client, sandboxId, sleep);
       } catch (error) {
         cleanupError = sanitizeMessage(
           error instanceof Error ? error.message : String(error),
@@ -146,11 +148,42 @@ export async function runDaytonaLiveSmoke(
     }
 
     if (cleanupError) {
-      return {
-        exitCode: 1,
-        stdout: lines.length > 0 ? lines.join("\n") : undefined,
-        stderr: `Daytona live smoke cleanup failed: ${cleanupError}`,
-      };
+      if (result?.stderr) {
+        result.stderr = `${result.stderr}\nDaytona live smoke cleanup failed: ${cleanupError}`;
+        result.exitCode = 1;
+      } else if (result) {
+        result.exitCode = 1;
+        result.stderr = `Daytona live smoke cleanup failed: ${cleanupError}`;
+      }
+    }
+  }
+}
+
+async function cleanupSandbox(
+  client: DaytonaApi,
+  sandboxId: string,
+  sleep: (ms: number) => Promise<void>
+): Promise<void> {
+  try {
+    await client.post(`/sandbox/${sandboxId}/stop`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("Sandbox is not started")) {
+      throw error;
+    }
+  }
+
+  const maxAttempts = 20;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await client.delete(`/sandbox/${sandboxId}`);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("status=409") || attempt === maxAttempts) {
+        throw error;
+      }
+      await sleep(2_000);
     }
   }
 }
@@ -325,7 +358,7 @@ async function runToolboxChecks(
     "echo git=$(git --version)",
     "test -d /workspace && echo workspace=ok",
     "test -f /app/sandbox_runtime/supervisor.py && echo app_runtime=ok",
-    "python - <<'PY'\nimport sandbox_runtime\nprint('sandbox_runtime_import=ok')\nPY",
+    "python -c \"import sandbox_runtime; print('sandbox_runtime_import=ok')\"",
     "command -v agent-browser >/dev/null && echo agent_browser=ok",
     "command -v code-server >/dev/null && echo code_server=ok",
   ].join("; ");
@@ -377,7 +410,9 @@ function assertToolboxOutput(output: string): void {
   const missing = required.filter((marker) => !output.includes(marker));
   if (missing.length > 0) {
     throw new Error(
-      `Daytona runtime/tooling checks failed; missing markers: ${missing.join(", ")}`
+      `Daytona runtime/tooling checks failed; missing markers: ${missing.join(", ")}\n${formatIndentedToolboxOutput(
+        output
+      )}`
     );
   }
 }

@@ -16,6 +16,8 @@ What it does:
 6. Shut down cleanly on signal
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import os
@@ -23,13 +25,18 @@ import re
 import signal
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 
 from .adapters import load_adapter
-from .adapters.base import AgentAdapter
 from .constants import CODE_SERVER_PORT, TTYD_PORT, TTYD_PROXY_PORT
 from .log_config import configure_logging, get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from .adapters.base import AgentAdapter
 
 configure_logging()
 
@@ -55,7 +62,7 @@ class SandboxSupervisor:
     CLONE_DEPTH_COMMITS = 100
     SIDECAR_TIMEOUT_SECONDS = 5
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Load agent adapter by name (e.g. "opencode", "pi"). The same adapter
         # class is instantiated separately in the bridge subprocess — each
         # process gets its own instance with its own state.
@@ -298,8 +305,6 @@ class SandboxSupervisor:
 
         return await self._update_existing_repo()
 
-
-
     async def start_code_server(self) -> None:
         """Start code-server for browser-based VS Code editing."""
         password = os.environ.get("CODE_SERVER_PASSWORD")
@@ -339,8 +344,6 @@ class SandboxSupervisor:
                 self.log.info("code_server.stdout", line=line.decode().rstrip())
         except Exception as e:
             self.log.warn("code_server.log_forward_error", exc=e)
-
-
 
     async def start_ttyd(self) -> None:
         """Start ttyd web terminal if TERMINAL_ENABLED is set."""
@@ -474,7 +477,7 @@ class SandboxSupervisor:
 
         # Pass adapter config via environment
         agent_name = os.environ.get("AGENT_ADAPTER", "opencode")
-        agent_port = str(getattr(self.adapter, 'PORT', 0))
+        agent_port = str(getattr(self.adapter, "PORT", 0))
         bridge_env = {
             **os.environ,
             "AGENT_ADAPTER": agent_name,
@@ -533,9 +536,9 @@ class SandboxSupervisor:
     async def _check_and_restart(
         self,
         name: str,
-        process: "asyncio.subprocess.Process | None",
+        process: asyncio.subprocess.Process | None,
         restart_count: int,
-        restart_fn,
+        restart_fn: Callable[[], Awaitable[None]],
         *,
         fatal: bool = True,
     ) -> tuple[int, bool]:
@@ -593,12 +596,17 @@ class SandboxSupervisor:
             # Agent — returns None for subprocess agents (bridge owns the process)
             agent_process = self.adapter.get_process()
             if agent_process and agent_process.returncode is not None:
-                async def _restart_agent():
+
+                async def _restart_agent() -> None:
                     self.agent_ready.clear()
                     await self.start_agent()
 
                 agent_restarts, should_stop = await self._check_and_restart(
-                    "agent", agent_process, agent_restarts, _restart_agent, fatal=True,
+                    "agent",
+                    agent_process,
+                    agent_restarts,
+                    _restart_agent,
+                    fatal=True,
                 )
                 if should_stop:
                     self.shutdown_event.set()
@@ -612,8 +620,11 @@ class SandboxSupervisor:
                     break
 
                 bridge_restarts, should_stop = await self._check_and_restart(
-                    "bridge", self.bridge_process, bridge_restarts,
-                    self.start_bridge, fatal=True,
+                    "bridge",
+                    self.bridge_process,
+                    bridge_restarts,
+                    self.start_bridge,
+                    fatal=True,
                 )
                 if should_stop:
                     self.shutdown_event.set()
@@ -621,22 +632,31 @@ class SandboxSupervisor:
 
             # Sidecars — non-fatal, best-effort restart
             code_server_restarts, _ = await self._check_and_restart(
-                "code_server", self.code_server_process, code_server_restarts,
-                self.start_code_server, fatal=False,
+                "code_server",
+                self.code_server_process,
+                code_server_restarts,
+                self.start_code_server,
+                fatal=False,
             )
             if code_server_restarts > self.MAX_RESTARTS:
                 self.code_server_process = None
 
             ttyd_restarts, _ = await self._check_and_restart(
-                "ttyd", self.ttyd_process, ttyd_restarts,
-                self.start_ttyd, fatal=False,
+                "ttyd",
+                self.ttyd_process,
+                ttyd_restarts,
+                self.start_ttyd,
+                fatal=False,
             )
             if ttyd_restarts > self.MAX_RESTARTS:
                 self.ttyd_process = None
 
             ttyd_proxy_restarts, _ = await self._check_and_restart(
-                "ttyd_proxy", self.ttyd_proxy_process, ttyd_proxy_restarts,
-                self.start_ttyd_proxy, fatal=False,
+                "ttyd_proxy",
+                self.ttyd_proxy_process,
+                ttyd_proxy_restarts,
+                self.start_ttyd_proxy,
+                fatal=False,
             )
             if ttyd_proxy_restarts > self.MAX_RESTARTS:
                 self.ttyd_proxy_process = None
@@ -847,7 +867,11 @@ class SandboxSupervisor:
         # Set up signal handlers
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(self._handle_signal(s)))
+
+            def _schedule_signal_handler(signal_to_handle: signal.Signals = sig) -> None:
+                asyncio.create_task(self._handle_signal(signal_to_handle))
+
+            loop.add_signal_handler(sig, _schedule_signal_handler)
 
         git_sync_success = False
         agent_ready = False
@@ -1005,7 +1029,7 @@ class SandboxSupervisor:
         self.log.info("supervisor.shutdown_complete")
 
 
-async def main():
+async def main() -> None:
     """Entry point for the sandbox supervisor."""
     supervisor = SandboxSupervisor()
     await supervisor.run()

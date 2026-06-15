@@ -143,6 +143,28 @@ export async function initNamedSession(
   return { stub, id, sessionName };
 }
 
+export async function selfFetchWithDoInvalidationRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  let lastResponse: Response | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const res = await SELF.fetch(input, init);
+    if (res.status !== 500) return res;
+
+    lastResponse = res;
+    const body = await res.clone().text();
+    const isDoInvalidation = body.includes("invalidating this Durable Object");
+    if (!isDoInvalidation && attempt > 0) {
+      return res;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  return lastResponse ?? SELF.fetch(input, init);
+}
+
 /**
  * Collect JSON messages from a WebSocket until a predicate matches or timeout.
  * Starts listening immediately — call BEFORE sending the message that triggers responses.

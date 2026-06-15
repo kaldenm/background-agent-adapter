@@ -11,10 +11,7 @@
  * re-link Claude each time).
  */
 
-import {
-  refreshAnthropicToken,
-  AnthropicTokenRefreshError,
-} from "../auth/anthropic";
+import { refreshAnthropicToken, AnthropicTokenRefreshError } from "../auth/anthropic";
 import { GlobalSecretsStore } from "../db/global-secrets";
 import { RepoSecretsStore } from "../db/repo-secrets";
 import type { Env } from "../types";
@@ -175,9 +172,7 @@ export class AnthropicTokenRefreshService {
     return this.getTokenStateFromSecrets(globalSecrets, "global", repoId);
   }
 
-  private async readRawSecrets(
-    session: SessionRow
-  ): Promise<Record<string, string> | null> {
+  private async readRawSecrets(session: SessionRow): Promise<Record<string, string> | null> {
     const repoId = await this.ensureRepoId(session);
 
     const repoStore = new RepoSecretsStore(this.db, this.encryptionKey);

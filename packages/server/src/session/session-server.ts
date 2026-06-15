@@ -46,11 +46,16 @@ import type { PresenceService } from "./presence-service";
 import type { ParticipantService } from "./participant-service";
 import type { SessionRepository } from "./repository";
 import type { MessageService } from "./services/message.service";
+import type { ParticipantRow } from "./types";
 import { hashToken } from "../auth/crypto";
 import { getAvatarUrl } from "./participant-service";
 import { resolveScmProviderFromEnv } from "../source-control";
 
 const WS_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+type SandboxSpawnErrorState = {
+  last_spawn_error?: string | null;
+};
 
 export interface SessionServerDeps {
   wsManager: SessionWebSocketManager;
@@ -110,7 +115,7 @@ export class SessionServer {
         avatar: getAvatarUrl(participant.scm_login, scmProvider),
       },
       replay,
-      spawnError: (sandbox as any)?.last_spawn_error ?? null,
+      spawnError: (sandbox as SandboxSpawnErrorState | null)?.last_spawn_error ?? null,
     } as ServerMessage);
 
     this.deps.presenceService.sendPresence(ws);
@@ -139,7 +144,7 @@ export class SessionServer {
   }
 
   /** Validate a token and return the participant, or null. */
-  private async authenticate(token: string): Promise<any | null> {
+  private async authenticate(token: string): Promise<ParticipantRow | null> {
     if (!token) {
       this.deps.log.warn("ws.connect", {
         event: "ws.connect",
@@ -190,7 +195,7 @@ export class SessionServer {
   }
 
   /** Add a client to the registry. */
-  private register(ws: WebSocket, participant: any, clientId: string): ClientInfo {
+  private register(ws: WebSocket, participant: ParticipantRow, clientId: string): ClientInfo {
     const scmProvider = resolveScmProviderFromEnv(this.deps.env.SCM_PROVIDER);
 
     const clientInfo: ClientInfo = {

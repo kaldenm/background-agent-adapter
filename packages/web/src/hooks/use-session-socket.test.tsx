@@ -7,6 +7,8 @@ import type { ServerMessage, SessionArtifact, SessionState } from "@open-inspect
 import type * as SwrModule from "swr";
 import { useSessionSocket } from "./use-session-socket";
 
+type SubscribedMessage = Extract<ServerMessage, { type: "subscribed" }>;
+
 const { mutateMock } = vi.hoisted(() => ({
   mutateMock: vi.fn(),
 }));
@@ -74,7 +76,10 @@ function createSessionState(overrides: Partial<SessionState> = {}): SessionState
   };
 }
 
-function createSubscribedMessage(artifacts: SessionArtifact[] = []): ServerMessage {
+function createSubscribedMessage(
+  artifacts: SessionArtifact[] = [],
+  overrides: Partial<SubscribedMessage> = {}
+): SubscribedMessage {
   return {
     type: "subscribed",
     sessionId: "session-1",
@@ -91,6 +96,7 @@ function createSubscribedMessage(artifacts: SessionArtifact[] = []): ServerMessa
       cursor: null,
     },
     spawnError: null,
+    ...overrides,
   };
 }
 
@@ -302,6 +308,65 @@ describe("useSessionSocket", () => {
 
     await waitFor(() => {
       expect(result.current.artifacts).toEqual([]);
+    });
+  });
+
+  it("exposes a failed Daytona sandbox spawn error from the subscribed payload", async () => {
+    const { result } = renderHook(() => useSessionSocket("session-1"));
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = FakeWebSocket.instances[0];
+    act(() => {
+      socket.open();
+      socket.receive(
+        createSubscribedMessage([], {
+          state: createSessionState({ sandboxStatus: "failed" }),
+          spawnError:
+            'Failed to create Daytona sandbox: {"statusCode":401,"error":"Unauthorized","message":"Invalid credentials"}',
+        })
+      );
+    });
+
+    await waitFor(() => {
+      expect(result.current.sessionState?.sandboxStatus).toBe("failed");
+      expect(result.current.sandboxError).toContain("Invalid credentials");
+    });
+  });
+
+  it("exposes live sandbox_error messages and clears them when spawning restarts", async () => {
+    const { result } = renderHook(() => useSessionSocket("session-1"));
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = FakeWebSocket.instances[0];
+    act(() => {
+      socket.open();
+      socket.receive(createSubscribedMessage());
+      socket.receive({
+        type: "sandbox_error",
+        error: "Failed to create Daytona sandbox: Invalid credentials",
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.sessionState?.sandboxStatus).toBe("failed");
+      expect(result.current.sandboxError).toBe(
+        "Failed to create Daytona sandbox: Invalid credentials"
+      );
+    });
+
+    act(() => {
+      socket.receive({ type: "sandbox_spawning" });
+    });
+
+    await waitFor(() => {
+      expect(result.current.sandboxError).toBeNull();
+      expect(result.current.sessionState?.sandboxStatus).toBe("spawning");
     });
   });
 
