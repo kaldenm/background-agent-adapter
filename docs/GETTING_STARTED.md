@@ -155,17 +155,82 @@ Create an R2 API Token:
 1. Create a [Daytona](https://app.daytona.io) account and generate an **API key** with the following
    permissions:
    - **Sandboxes**: Read, Write (runtime sandbox management and preview URLs)
-   - **Snapshots**: Read, Write, Delete (automated snapshot builds via Terraform)
-2. Note the **API URL** (e.g., `https://app.daytona.io/api`) and optional **target**
-3. Seed the named base snapshot before pointing traffic at Daytona:
+   - **Snapshots**: Read, Write, Delete (only required when this repo builds or replaces the base
+     snapshot)
+2. Note the **API URL** (e.g., `https://app.daytona.io/api`), optional **organization id**, and
+   optional **target**. Some Daytona accounts require `DAYTONA_ORGANIZATION_ID` so API requests can
+   include the `X-Daytona-Organization-ID` header.
+3. Verify the runtime API key before creating sessions:
+
    ```bash
-   cd packages/daytona-infra
-   pip install daytona   # or: uv pip install daytona
-   python -m src.bootstrap --force
+   npm run check:daytona
    ```
-   After initial setup, Terraform automatically rebuilds the snapshot when source files change.
-4. Set `sandbox_provider = "daytona"` in `terraform.tfvars`
-5. Set `daytona_api_url`, `daytona_api_key`, and `daytona_base_snapshot` in `terraform.tfvars`
+
+   This performs a non-destructive `GET /sandbox` probe. If it returns `401 Invalid credentials`,
+   Daytona rejected `DAYTONA_API_KEY` before any sandbox or agent code ran.
+
+4. Choose how you want to manage the Daytona base snapshot.
+
+   A **base snapshot** is the prebuilt Daytona image used for fresh Open-Inspect sandboxes. It can
+   contain the OS packages, toolchain, and repo-local sandbox runtime so new sandboxes start
+   quickly. It is operator-owned: this repo does not ship a private snapshot name that every deploy
+   should use.
+
+   For a preseeded or existing snapshot, confirm the local contract without making Daytona calls:
+
+   ```bash
+   npm run daytona:snapshot -- manual --dry-run
+   ```
+
+   Set `daytona_snapshot_mode = "manual"` in `terraform.tfvars`. Terraform will use
+   `daytona_base_snapshot` as the configured snapshot name and will not rebuild it automatically.
+
+   To build or refresh a snapshot from this repo, first dry-run the command:
+
+   ```bash
+   npm run daytona:snapshot -- build --dry-run
+   ```
+
+   Then run the build when you are ready:
+
+   ```bash
+   npm run daytona:snapshot -- build
+   ```
+
+   Rebuild when `packages/daytona-infra/src` or `packages/sandbox-runtime/src` changes in a way that
+   should be baked into fresh Daytona sandboxes. Roll back by pointing `daytona_base_snapshot` back
+   to the previous known-good snapshot name and redeploying.
+
+   You can also set `daytona_snapshot_mode = "verify"` to run non-mutating credential/config checks
+   during Terraform, or `daytona_snapshot_mode = "build"` to have Terraform invoke the build command
+   explicitly. Use `build` only when your Terraform runner is allowed to mutate Daytona snapshots.
+
+   To prove your real Daytona account and selected snapshot can create a usable sandbox, run the
+   opt-in live smoke:
+
+   ```bash
+   npm run check:daytona:live
+   ```
+
+   This creates a disposable sandbox from `DAYTONA_BASE_SNAPSHOT`, checks the baked runtime/tooling
+   through Daytona toolbox execution, then stops and deletes the sandbox. It is not part of default
+   CI because it uses real Daytona resources.
+
+   After deploying the web app and Worker, run the deployed session smoke with a real logged-in
+   cookie to prove the full path: authenticated web API, session creation, Daytona sandbox, sandbox
+   bridge, agent prompt execution, WebSocket events, and cleanup.
+
+   ```bash
+   OPEN_INSPECT_BASE_URL=https://your-app.example \
+   OPEN_INSPECT_WS_URL=wss://your-worker.example \
+   OPEN_INSPECT_COOKIE='next-auth.session-token=...' \
+   OPEN_INSPECT_SMOKE_REPO=owner/repo \
+   npm run check:session:live
+   ```
+
+5. Set `sandbox_provider = "daytona"` in `terraform.tfvars`
+6. Set `daytona_api_url`, `daytona_api_key`, `daytona_base_snapshot`, and `daytona_snapshot_mode` in
+   `terraform.tfvars`
 
 The control plane calls the Daytona REST API directly — no shim service to deploy.
 
@@ -355,7 +420,9 @@ modal_workspace             = "your-modal-workspace"
 # Daytona (only required when sandbox_provider = "daytona")
 # daytona_api_url           = "https://app.daytona.io/api"
 # daytona_api_key           = "your-daytona-api-key"
+# daytona_organization_id   = "your-daytona-organization-id"
 # daytona_base_snapshot     = "your-snapshot-name"
+# daytona_snapshot_mode     = "manual" # "manual", "verify", or "build"
 
 # GitHub App (used for both OAuth and repository access)
 github_client_id     = "Iv1.abc123..."           # From GitHub App settings

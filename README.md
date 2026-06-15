@@ -258,7 +258,7 @@ Everything below comes from the upstream
 | [server](packages/server)                   | Cloudflare Workers — scheduler, session management, Durable Objects         |
 | [web](packages/web)                         | Next.js web client                                                          |
 | [modal-infra](packages/modal-infra)         | Modal sandbox infrastructure                                                |
-| [daytona-infra](packages/daytona-infra)     | Daytona sandbox snapshot tooling                                            |
+| [daytona-infra](packages/daytona-infra)     | Operator-owned Daytona base snapshot tooling                                |
 | [slack-bot](packages/slack-bot)             | Slack integration                                                           |
 | [github-bot](packages/github-bot)           | GitHub integration                                                          |
 | [linear-bot](packages/linear-bot)           | Linear integration                                                          |

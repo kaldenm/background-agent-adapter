@@ -27,8 +27,13 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "npm run test --workspaces --if-present",
+    "test:scripts": "node --experimental-strip-types --test scripts/*.test.ts",
     "test:coverage": "npm run test:coverage --workspaces --if-present",
     "test:integration": "npm run test:integration --workspaces --if-present",
+    "check:daytona": "node --experimental-strip-types scripts/check-daytona-auth.ts",
+    "check:daytona:live": "node --experimental-strip-types scripts/daytona-live-smoke.ts --create-sandbox",
+    "check:session:live": "node --experimental-strip-types scripts/session-live-smoke.ts",
+    "daytona:snapshot": "node --experimental-strip-types scripts/daytona-snapshot.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "prepare": "node -e \"if (process.env.CI) process.exit(0)\" && husky"

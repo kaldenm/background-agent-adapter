@@ -1,11 +1,12 @@
 # Daytona Infrastructure Module
-# Builds the base snapshot used by Daytona sandboxes.
+# Verifies or builds the base snapshot used by Daytona sandboxes.
 # Mirrors the pattern of terraform/modules/modal-app/ for Modal deployments.
 
 resource "null_resource" "daytona_snapshot" {
   triggers = {
     source_hash   = var.source_hash
     snapshot_name = var.snapshot_name
+    snapshot_mode = var.snapshot_mode
     api_url       = var.api_url
     target        = var.target
     script_hash   = filesha256("${path.module}/scripts/build-snapshot.sh")
@@ -16,11 +17,13 @@ resource "null_resource" "daytona_snapshot" {
     interpreter = ["bash"]
 
     environment = {
-      DAYTONA_API_KEY       = var.api_key
-      DAYTONA_API_URL       = var.api_url
-      DAYTONA_TARGET        = var.target
-      DAYTONA_BASE_SNAPSHOT = var.snapshot_name
-      DEPLOY_PATH           = var.deploy_path
+      DAYTONA_API_KEY         = var.api_key
+      DAYTONA_API_URL         = var.api_url
+      DAYTONA_ORGANIZATION_ID = var.organization_id
+      DAYTONA_TARGET          = var.target
+      DAYTONA_BASE_SNAPSHOT   = var.snapshot_name
+      DAYTONA_SNAPSHOT_MODE   = var.snapshot_mode
+      DEPLOY_PATH             = var.deploy_path
     }
   }
 }

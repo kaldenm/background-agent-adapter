@@ -277,6 +277,12 @@ variable "daytona_api_key" {
   }
 }
 
+variable "daytona_organization_id" {
+  description = "Optional Daytona organization id for org-scoped API keys"
+  type        = string
+  default     = ""
+}
+
 variable "daytona_base_snapshot" {
   description = "Named Daytona snapshot used for fresh sandbox creation"
   type        = string
@@ -285,6 +291,17 @@ variable "daytona_base_snapshot" {
   validation {
     condition     = var.sandbox_provider != "daytona" || length(var.daytona_base_snapshot) > 0
     error_message = "daytona_base_snapshot must be set when sandbox_provider = 'daytona'."
+  }
+}
+
+variable "daytona_snapshot_mode" {
+  description = "How Terraform treats the configured Daytona snapshot: manual uses an existing snapshot, verify runs non-mutating checks, build creates/recreates it"
+  type        = string
+  default     = "manual"
+
+  validation {
+    condition     = contains(["manual", "verify", "build"], var.daytona_snapshot_mode)
+    error_message = "daytona_snapshot_mode must be one of: manual, verify, build."
   }
 }
 

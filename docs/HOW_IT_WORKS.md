@@ -152,6 +152,10 @@ Open-Inspect supports two backend patterns:
 Modal is still the only backend with repo-image builds and live filesystem snapshot restore. Daytona
 uses persistent sandboxes instead: the control plane stops the sandbox on inactivity or stale
 heartbeat, then resumes that same sandbox later with the same logical sandbox ID and auth token.
+Daytona still needs a named `DAYTONA_BASE_SNAPSHOT` for brand-new sandboxes, but that snapshot is an
+operator-owned base image, not a per-session restore point. Operators can point at an existing
+preseeded snapshot for fast private deploys, run a non-mutating verification pass, or explicitly
+build a new base snapshot from the repo-local Daytona tooling.
 
 ### Clients
 

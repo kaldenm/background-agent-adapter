@@ -27,10 +27,12 @@ module "daytona_infra" {
   count  = local.use_daytona_backend ? 1 : 0
   source = "../../modules/daytona-infra"
 
-  api_key       = var.daytona_api_key
-  api_url       = var.daytona_api_url
-  target        = var.daytona_target
-  snapshot_name = var.daytona_base_snapshot
-  deploy_path   = "${var.project_root}/packages/daytona-infra"
-  source_hash   = data.external.daytona_source_hash[0].result.hash
+  api_key         = var.daytona_api_key
+  api_url         = var.daytona_api_url
+  organization_id = var.daytona_organization_id
+  target          = var.daytona_target
+  snapshot_name   = var.daytona_base_snapshot
+  snapshot_mode   = var.daytona_snapshot_mode
+  deploy_path     = "${var.project_root}/packages/daytona-infra"
+  source_hash     = data.external.daytona_source_hash[0].result.hash
 }
