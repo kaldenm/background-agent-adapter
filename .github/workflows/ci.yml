@@ -290,11 +290,11 @@ jobs:
       - name: Build shared package
         run: npm run build -w @open-inspect/shared
 
-      - name: Run web tests
-        run: npm test -w @open-inspect/web
-
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
+
+      - name: Run web tests
+        run: npm test -w @open-inspect/web
 
       - name: Run web E2E tests
         run: npm run test:e2e -w @open-inspect/web
