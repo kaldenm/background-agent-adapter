@@ -92,6 +92,12 @@ terraform.rc
 # Internal docs (kept locally)
 docs/internal/
 docs/skill-outputs/**
+context.md
+end-of-day-recap.md
+full-auth-audit.md
+investigation-*.md
+pi-error-behavior-audit.md
+step*-review.md
 
 SECURITY-AUDIT.md
 terraform/environments/production/plan.out
