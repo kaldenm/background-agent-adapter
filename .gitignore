@@ -111,6 +111,7 @@ wrangler-tail.toml
 
 # Audit and report artifacts
 audit/
+tmp/
 newcomer-report-*.md
 newcomer-audit/
 stream-a-*.md
