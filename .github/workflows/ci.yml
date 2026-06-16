@@ -291,7 +291,7 @@ jobs:
         run: npm run build -w @open-inspect/shared
 
       - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+        run: npm exec -w @open-inspect/web -- playwright install --with-deps chromium
 
       - name: Run web tests
         run: npm test -w @open-inspect/web
